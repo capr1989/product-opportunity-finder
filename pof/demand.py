@@ -72,13 +72,16 @@ def keyword_ideas(store: Store, keywords: list[str], country: str = "2840", lang
         response = client.get_service("KeywordPlanIdeaService").generate_keyword_ideas(
             request=request, timeout=30, retry=None)
         rows = []
+        def metric_value(metric, field, divisor=1):
+            return getattr(metric, field) / divisor if metric._pb.HasField(field) else None
         # One bounded page; do not let the pager automatically issue unlimited calls.
         for item in response.raw_page.results:
             metric = item.keyword_idea_metrics
-            rows.append({"keyword": item.text, "monthly_searches": metric.avg_monthly_searches,
-                "competition": metric.competition.name, "competition_index": metric.competition_index,
-                "low_bid": metric.low_top_of_page_bid_micros / 1_000_000,
-                "high_bid": metric.high_top_of_page_bid_micros / 1_000_000,
+            rows.append({"keyword": item.text, "monthly_searches": metric_value(metric, "avg_monthly_searches"),
+                "competition": metric.competition.name, "competition_index": metric_value(metric, "competition_index"),
+                "cpc": metric_value(metric, "average_cpc_micros", 1_000_000),
+                "low_bid": metric_value(metric, "low_top_of_page_bid_micros", 1_000_000),
+                "high_bid": metric_value(metric, "high_top_of_page_bid_micros", 1_000_000),
                 "monthly_trends": [{"year": m.year, "month": m.month.name, "searches": m.monthly_searches}
                                    for m in metric.monthly_search_volumes],
                 "country_criterion": country, "language_criterion": language,

@@ -80,6 +80,7 @@ for product in products:
     if mapping:
         row = next((r for r in keyword_rows if r["keyword"] == mapping["keyword"]), None)
         if row:
+            product.demand_reference = row.copy()
             for key in ("monthly_searches", "competition_index", "competition", "cpc", "low_bid", "high_bid", "trend", "seasonality"):
                 if key in row:
                     setattr(product, key, row[key])

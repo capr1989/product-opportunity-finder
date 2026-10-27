@@ -52,6 +52,7 @@ class Product:
     seasonality: str = ""
     demand_confidence: str = ""
     specs: dict = field(default_factory=dict)
+    demand_reference: dict = field(default_factory=dict)
     states: dict = field(default_factory=dict)
     collected_at: str = field(default_factory=now)
     image_url: str = ""
@@ -75,6 +76,8 @@ class Product:
         for name in NUMERIC:
             value = getattr(self, name)
             if value is not None:
+                if isinstance(value, bool):
+                    raise ValueError(f"{name} must be numeric, not boolean")
                 value = float(value)
                 if not math.isfinite(value) or value < 0:
                     raise ValueError(f"{name} must be finite and non-negative")
@@ -86,13 +89,20 @@ class Product:
         for name in ("fragile", "restricted", "demo", "image_reuse_permitted"):
             if getattr(self, name) is not None and type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be boolean or unknown")
-        if not isinstance(self.specs, dict) or not isinstance(self.states, dict):
-            raise ValueError("specs and states must be objects")
+        if not all(isinstance(v, dict) for v in (self.specs, self.states, self.demand_reference)):
+            raise ValueError("specs, states and demand_reference must be objects")
         if any(v not in {"verified", "estimated", "unavailable", "stale"} for v in self.states.values()):
             raise ValueError("invalid field state")
         stamp = datetime.fromisoformat(self.collected_at)
         if stamp.tzinfo is None or stamp > datetime.now(UTC):
             raise ValueError("collected_at must be timezone-aware and not in the future")
+        if "collected_at" in self.demand_reference:
+            value = self.demand_reference["collected_at"]
+            if not isinstance(value, str):
+                raise ValueError("Invalid demand timestamp")
+            demand_stamp = datetime.fromisoformat(value)
+            if demand_stamp.tzinfo is None or demand_stamp > datetime.now(UTC):
+                raise ValueError("Demand timestamp must be timezone-aware and not in the future")
         for value in (self.url, self.image_url):
             if value:
                 u = urlsplit(value)
@@ -103,7 +113,10 @@ class Product:
         value = getattr(self, name, None)
         if value is None or value == "" or value == "unknown":
             return "unavailable"
-        age = (datetime.now(UTC) - datetime.fromisoformat(self.collected_at)).days
+        stamp = self.collected_at
+        if name in {"monthly_searches", "competition_index", "competition", "cpc", "low_bid", "high_bid", "trend", "seasonality"}:
+            stamp = self.demand_reference.get("collected_at", stamp)
+        age = (datetime.now(UTC) - datetime.fromisoformat(stamp)).days
         return "stale" if age >= stale_days else self.states.get(name, "estimated")
 
     def record(self) -> dict[str, Any]:

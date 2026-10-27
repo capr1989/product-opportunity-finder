@@ -34,7 +34,7 @@ def import_csv(raw: bytes, force_demo: bool = False) -> list[Product]:
                     if clean[key].lower() not in {"true", "false"}:
                         raise ValueError(f"{key} must be true or false")
                     clean[key] = clean[key].lower() == "true"
-                elif key in {"specs", "states"}:
+                elif key in {"specs", "states", "demand_reference"}:
                     clean[key] = json.loads(clean[key])
             clean["demo"] = force_demo
             output.append(Product(**clean))
