@@ -51,6 +51,11 @@ class Store:
         return hashlib.sha256(json.dumps(key).encode()).hexdigest()
 
     def add_run(self, name: str, products: list[Product]) -> int:
+        for p in products:
+            if not p.demo and self.get_config("source", p.source) is None:
+                self.put_config("source", p.source, {"name": p.source, "role": p.role, "enabled": True,
+                    "kind": "import", "url": "", "allowed_host": "", "permission_confirmed": False,
+                    "interval": 2.0, "cache_seconds": 3600})
         with self.connect() as db:
             run_id = db.execute("INSERT INTO runs(name,created) VALUES(?,?)", (name[:200], now())).lastrowid
             for p in products:

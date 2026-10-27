@@ -31,7 +31,8 @@ class FeedConnector:
                 for row in rows:
                     if not isinstance(row, dict) or set(row) - allowed:
                         raise ValueError("Feed contains unsupported fields")
-                    products.append(Product(**{**row, "source": source["name"], "role": source["role"], "demo": False}))
+                    products.append(Product(**{**row, "currency": row.get("currency", "UNKNOWN"),
+                        "source": source["name"], "role": source["role"], "demo": False}))
             except (TypeError, RecursionError, json.JSONDecodeError):
                 raise ValueError("Malformed normalized JSON feed") from None
         for p in products:
