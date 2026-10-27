@@ -36,7 +36,7 @@ def import_csv(raw: bytes, force_demo: bool = False) -> list[Product]:
                     clean[key] = clean[key].lower() == "true"
                 elif key in {"specs", "states", "demand_reference"}:
                     clean[key] = json.loads(clean[key])
-            clean["demo"] = force_demo
+            clean["demo"] = force_demo or clean.get("demo", False)
             output.append(Product(**clean))
         except (ValueError, TypeError) as exc:
             raise ValueError(f"Invalid CSV row {index}: {exc}") from None

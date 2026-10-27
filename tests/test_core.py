@@ -36,6 +36,7 @@ def test_snapshot_history(tmp_path):
 
 def test_csv_and_malformed():
     assert import_csv(b"source,title,price\nA,Widget,5\n")[0].price == 5
+    assert import_csv(b"source,title,demo\nA,Fixture,true\n")[0].demo
     for raw in (b"source,title,price\nA,Widget,NaN", b"source,title\nA", b"title\nWidget"):
         with pytest.raises(ValueError):
             import_csv(raw)

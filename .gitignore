@@ -15,5 +15,6 @@ credentials*.json
 token*.json
 browser-profile/
 dist/
+work/
 *.egg-info/
 audit.json
