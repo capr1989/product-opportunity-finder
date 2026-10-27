@@ -58,11 +58,14 @@ class Product:
     image_url: str = ""
     image_reuse_permitted: bool = False
     demo: bool = False
+    collection_method: str = "import"
+    retention_hours: float | None = None
+    source_attributes: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         string_fields = {"source", "title", "role", "url", "brand", "model", "gtin", "sku", "category",
             "subcategory", "condition", "currency", "availability", "merchant", "supplier_country",
-            "target_country", "trend", "competition", "seasonality", "demand_confidence", "collected_at", "image_url"}
+            "target_country", "trend", "competition", "seasonality", "demand_confidence", "collected_at", "image_url", "collection_method"}
         for f in fields(self):
             value = getattr(self, f.name)
             if f.name in string_fields and not isinstance(value, str):
@@ -71,6 +74,9 @@ class Product:
                 raise ValueError(f"{f.name}: maximum length 4000")
         if not self.source.strip() or not self.title.strip():
             raise ValueError("source and title are required")
+        if self.retention_hours is not None and (not isinstance(self.retention_hours, (int, float))
+                or not math.isfinite(self.retention_hours) or not 0 < self.retention_hours <= 720):
+            raise ValueError("Invalid content retention limit")
         if self.role not in {"supplier", "retailer"}:
             raise ValueError("role must be supplier or retailer")
         for name in NUMERIC:
@@ -89,7 +95,7 @@ class Product:
         for name in ("fragile", "restricted", "demo", "image_reuse_permitted"):
             if getattr(self, name) is not None and type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be boolean or unknown")
-        if not all(isinstance(v, dict) for v in (self.specs, self.states, self.demand_reference)):
+        if not all(isinstance(v, dict) for v in (self.specs, self.states, self.demand_reference, self.source_attributes)):
             raise ValueError("specs, states and demand_reference must be objects")
         if any(v not in {"verified", "estimated", "unavailable", "stale"} for v in self.states.values()):
             raise ValueError("invalid field state")

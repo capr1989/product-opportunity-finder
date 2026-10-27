@@ -56,6 +56,7 @@ def parse_products(html: bytes, source: dict) -> list[Product]:
             "price": offer.get("price"), "currency": offer.get("priceCurrency", "UNKNOWN"),
             "availability": str(offer.get("availability", "unknown")).split("/")[-1],
             "rating": rating.get("ratingValue"), "reviews": rating.get("reviewCount")}
+        values["availability"] = {"InStock": "in_stock", "OutOfStock": "out_of_stock", "PreOrder": "preorder"}.get(values["availability"], values["availability"])
         values["states"] = {k: "verified" for k, v in values.items() if v is not None and v != ""}
         output.append(Product(**values))
     if not output:

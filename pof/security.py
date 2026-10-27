@@ -52,7 +52,10 @@ class SafeHTTP:
         self.last = 0.0
         self.transport = transport
 
-    def fetch(self, url: str, host: str, content_types=("application/json", "text/csv")) -> bytes:
+    def fetch(self, url: str, host: str, content_types=("application/json", "text/csv"), *, params=None) -> bytes:
+        # Authentication parameters are only supported on reviewed, fixed official API hosts.
+        if params is not None and host != "api.bestbuy.com":
+            raise ValueError("API parameters are restricted to reviewed official endpoints")
         for attempt in range(3):
             hostname, address = validate_url(url, host)
             time.sleep(max(0, self.interval - (time.monotonic() - self.last)))
@@ -63,11 +66,12 @@ class SafeHTTP:
                     # Pin the checked IP. Preserve TLS SNI and certificate verification for the original host.
                     with client.stream("GET", httpx.URL(url).copy_with(host=address),
                         headers={"Host": hostname, "User-Agent": "ProductOpportunityFinder/0.1 (bounded research)"},
-                        extensions={"sni_hostname": hostname}) as response:
+                        extensions={"sni_hostname": hostname}, params=params) as response:
                         if 300 <= response.status_code < 400:
                             raise ValueError("Redirect blocked; configure the final authorized HTTPS URL")
                         if response.status_code in (401, 403, 429):
-                            raise ValueError(f"Access restricted or rate limited (HTTP {response.status_code}); stopped")
+                            from pof.live.errors import from_http
+                            raise from_http(response.status_code)
                         if response.status_code >= 500 and attempt < 2:
                             time.sleep(2 ** attempt)
                             continue

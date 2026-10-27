@@ -78,7 +78,7 @@ def test_export_structure():
 
 
 def test_no_shell_or_unsafe_deserialization():
-    for path in Path("pof").glob("*.py"):
+    for path in Path("pof").rglob("*.py"):
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
@@ -87,3 +87,14 @@ def test_no_shell_or_unsafe_deserialization():
     config = Path(".streamlit/config.toml").read_text()
     assert 'address = "127.0.0.1"' in config
     assert 'server.address=127.0.0.1' in Path("Launch.cmd").read_text()
+
+
+def test_browser_children_do_not_inherit_app_credentials(monkeypatch):
+    from pof.browser import browser_env
+    monkeypatch.setenv("GOOGLE_ADS_REFRESH_TOKEN", "private-value")
+    monkeypatch.setenv("BESTBUY_API_KEY", "private-value")
+    monkeypatch.setenv("HTTPS_PROXY", "private-proxy")
+    result = browser_env()
+    assert "GOOGLE_ADS_REFRESH_TOKEN" not in result
+    assert "BESTBUY_API_KEY" not in result
+    assert "HTTPS_PROXY" not in result

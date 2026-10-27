@@ -28,13 +28,13 @@ def import_csv(raw: bytes, force_demo: bool = False) -> list[Product]:
                 raise ValueError("column count mismatch")
             clean = {k: v for k, v in row.items() if v.strip()}
             for key in clean:
-                if key in NUMERIC:
+                if key in NUMERIC or key == "retention_hours":
                     clean[key] = float(clean[key])
                 elif key in {"demo", "fragile", "restricted", "image_reuse_permitted"}:
                     if clean[key].lower() not in {"true", "false"}:
                         raise ValueError(f"{key} must be true or false")
                     clean[key] = clean[key].lower() == "true"
-                elif key in {"specs", "states", "demand_reference"}:
+                elif key in {"specs", "states", "demand_reference", "source_attributes"}:
                     clean[key] = json.loads(clean[key])
             clean["demo"] = force_demo or clean.get("demo", False)
             output.append(Product(**clean))

@@ -2,8 +2,10 @@
 import hashlib
 import json
 import sqlite3
+import time
 from contextlib import contextmanager
 from pathlib import Path
+from datetime import datetime, timedelta
 
 from pof.models import Product, now
 
@@ -28,17 +30,23 @@ class Store:
                 CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY, payload TEXT, created REAL);
             """)
             db.execute("INSERT OR IGNORE INTO migrations VALUES(1,?)", (now(),))
+            columns = {r[1] for r in db.execute("PRAGMA table_info(snapshots)")}
+            if "expires_at" not in columns:
+                db.execute("ALTER TABLE snapshots ADD COLUMN expires_at TEXT")
+            db.execute("INSERT OR IGNORE INTO migrations VALUES(2,?)", (now(),))
         for index, name in enumerate(SOURCES):
             if self.get_config("source", name) is None:
                 self.put_config("source", name, {"name": name, "role": "supplier" if index < 3 else "retailer",
                     "enabled": True, "kind": "import", "url": "", "allowed_host": "",
                     "permission_confirmed": False, "interval": 2.0, "cache_seconds": 3600})
+        self.purge_expired()
 
     @contextmanager
     def connect(self):
         db = sqlite3.connect(self.path)
         try:
             db.execute("PRAGMA foreign_keys=ON")
+            db.execute("PRAGMA secure_delete=ON")
             db.execute("PRAGMA journal_mode=WAL")
             with db:
                 yield db
@@ -47,7 +55,8 @@ class Store:
 
     @staticmethod
     def identity(p: Product) -> str:
-        key = [p.source, p.role, p.url or p.sku or f"{p.brand}|{p.model}|{p.title}", p.demo]
+        stable = p.sku if p.collection_method == "bestbuy_api" and p.sku else p.url or p.sku or f"{p.brand}|{p.model}|{p.title}"
+        key = [p.source, p.role, stable, p.demo]
         return hashlib.sha256(json.dumps(key).encode()).hexdigest()
 
     def add_run(self, name: str, products: list[Product]) -> int:
@@ -59,11 +68,25 @@ class Store:
         with self.connect() as db:
             run_id = db.execute("INSERT INTO runs(name,created) VALUES(?,?)", (name[:200], now())).lastrowid
             for p in products:
-                db.execute("INSERT INTO snapshots(run_id,identity,payload,created) VALUES(?,?,?,?)",
-                           (run_id, self.identity(p), json.dumps(p.record()), now()))
+                retention = p.retention_hours
+                if p.collection_method == "bestbuy_api":
+                    retention = min(retention or 72, 72)
+                expires = (datetime.fromisoformat(p.collected_at) + timedelta(hours=retention)).isoformat() if retention else None
+                db.execute("INSERT INTO snapshots(run_id,identity,payload,created,expires_at) VALUES(?,?,?,?,?)",
+                           (run_id, self.identity(p), json.dumps(p.record()), now(), expires))
         return run_id
 
+    def purge_expired(self):
+        """Remove licensed content after its retention deadline, including historical payloads."""
+        with self.connect() as db:
+            removed = db.execute("DELETE FROM snapshots WHERE expires_at IS NOT NULL AND julianday(expires_at)<=julianday(?)", (now(),)).rowcount
+            removed += db.execute("DELETE FROM cache WHERE key LIKE 'bestbuy-live:%' AND created<?", (time.time() - 72 * 3600,)).rowcount
+        if removed:
+            with self.connect() as db:
+                db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
     def products(self, run_id: int | None = None, demo: bool | None = None) -> list[Product]:
+        self.purge_expired()
         with self.connect() as db:
             if run_id is None:
                 rows = db.execute("SELECT payload FROM snapshots WHERE id IN "

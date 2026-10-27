@@ -43,6 +43,8 @@ def opportunities(products: list[Product], assumptions: Assumptions, weights=Non
             financial = calculate(source.price, retail.price if accepted and currencies else None,
                                   source.shipping, source.moq, assumptions,
                                   source.currency if currencies else "UNKNOWN")
+            if source.source_attributes.get("price_basis") == "advertised_minimum":
+                financial = {"known": False, "reason": "Minimum/coupon supplier price needs variant and final unit-cost confirmation"}
             ranking, breakdown = score(source, financial, m.confidence, weights or DEFAULT_WEIGHTS)
             record = source.record()
             record.update(financial)
