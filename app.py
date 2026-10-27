@@ -2,6 +2,7 @@
 from dataclasses import asdict
 import json
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -19,13 +20,15 @@ from pof.models import NUMERIC
 from pof.research import deals, opportunities, search
 from pof.scoring import DEFAULT_WEIGHTS
 from pof.storage import Store
+from pof.ui_live import (connect_sources, help_center, navigate, new_research, results_dashboard,
+                         setup_wizard, METRIC_HELP)
 
 ROOT = Path(__file__).resolve().parent
-st.set_page_config(page_title="Product Opportunity Finder", page_icon="🔎", layout="wide")
+st.set_page_config(page_title="Product Opportunity Finder", page_icon="ðŸ”Ž", layout="wide")
 
 
 @st.cache_resource
-def initialize():
+def initialize(data_directory):
     (ROOT / "logs").mkdir(exist_ok=True)
     logger = logging.getLogger("pof")
     if not logger.handlers:
@@ -34,18 +37,27 @@ def initialize():
         logger.setLevel(logging.INFO)
     # Do not enable HTTP/Google debug logging: it can expose OAuth metadata.
     logging.getLogger("google.ads.googleads.client").setLevel(logging.CRITICAL)
-    return Store(ROOT / "data" / "research.sqlite3")
+    return Store(Path(data_directory) / "research.sqlite3")
 
 
-store = initialize()
-PAGES = ["Overview", "Product Search", "Broad Discovery", "Retail Deal Hunter", "Dropshipping Opportunities",
+store = initialize(os.environ.get("POF_DATA_DIR", str(ROOT / "data")))
+PAGES = ["Overview", "Setup", "New Research", "Research Results", "Product Search", "Broad Discovery", "Retail Deal Hunter", "Dropshipping Opportunities",
          "Product Comparison", "Google Ads Keyword Research", "Saved Products", "Research History",
-         "Source Manager", "API Settings and Diagnostics", "Export Center"]
-st.sidebar.title("🔎 Opportunity Finder")
-page = st.sidebar.radio("Workspace", PAGES)
-demo = st.sidebar.toggle("Demo dataset", value=False, help="Fictional data stays separate from real research")
+         "Source Manager", "API Settings and Diagnostics", "Export Center", "Help"]
+st.sidebar.title("ðŸ”Ž Opportunity Finder")
+if "next_workspace" in st.session_state:
+    st.session_state["workspace"] = st.session_state.pop("next_workspace")
+if "workspace" not in st.session_state:
+    st.session_state["workspace"] = "Overview" if (store.get_config("settings", "onboarding") or {}).get("complete") else "Setup"
+page = st.sidebar.radio("Workspace", PAGES, key="workspace")
+if st.sidebar.button("Start New Research", type="primary"):
+    navigate("New Research")
+if page in {"New Research", "Research Results"}:
+    st.session_state["demo_dataset"] = False
+demo = st.sidebar.toggle("Demo dataset", value=False, key="demo_dataset", disabled=page in {"New Research", "Research Results"},
+    help="Fictional data stays separate from real research. Live research screens always use real data.")
 if demo:
-    st.warning("DEMO MODE · All displayed products and metrics are fictional. No live evidence or sales predictions.")
+    st.warning("DEMO MODE Â· All displayed products and metrics are fictional. No live evidence or sales predictions.")
     if st.sidebar.button("Load / reset demo snapshots"):
         store.add_run("DEMO fixtures", demo_products())
         st.rerun()
@@ -56,7 +68,8 @@ with st.sidebar.expander("Cost assumptions", expanded=False):
     for key, default in saved_assumptions.items():
         inputs[key] = st.number_input(key.replace("_", " ").title(), min_value=0.0,
             max_value=1.0 if key.endswith("rate") else 100000.0, value=float(default),
-            step=0.01 if key.endswith("rate") else 0.1, format="%.4f", key=f"cost_{key}")
+            step=0.01 if key.endswith("rate") else 0.1, format="%.4f", key=f"cost_{key}",
+            help="User estimate; not a verified provider cost. Rates use fractions (0.15 = 15%).")
     assumptions = Assumptions(**inputs)
     st.caption("Rates are fractions: 0.15 = 15%. Shipping in imports is per unit. Taxes are nonrecoverable landed taxes.")
     if st.button("Save cost defaults"):
@@ -90,13 +103,14 @@ for product in products:
 
 def table(rows, key="table"):
     if not rows:
-        st.info("No results yet. Load the demo, import a CSV, or configure an authorized source.")
+        st.info("No products to display yet. Use Start New Research to collect from connected sources, or visit Source Manager to review access and connection steps.")
         return
     clean = [{k: json.dumps(v) if isinstance(v, (dict, list)) else v for k, v in row.items()
               if k not in {"source_record", "retail_record", "assumptions", "breakdown"}} for row in rows]
     st.dataframe(pd.DataFrame(clean), width="stretch", hide_index=True, key=key,
-                 column_config={k: st.column_config.LinkColumn(k) for k in
-                                ("url", "retail_url", "reference_url")})
+                 column_config={**{k: st.column_config.LinkColumn(k) for k in
+                                ("url", "retail_url", "reference_url")},
+                                **{k: st.column_config.NumberColumn(help=v) for k, v in METRIC_HELP.items()}})
 
 
 TEXT_FILTERS = ["title", "category", "subcategory", "brand", "condition", "availability", "supplier_country",
@@ -179,9 +193,14 @@ def product_details(items):
     if not items:
         return
     index = st.selectbox("Inspect / save product", range(len(items)),
-                         format_func=lambda i: f"{items[i].source} · {items[i].title}")
+                         format_func=lambda i: f"{items[i].source} Â· {items[i].title}")
     p = items[index]
-    st.json({"record": p.record(), "field_status": {k: p.state(k) for k in p.record()}})
+    st.write(f"**{p.title}** Â· {p.source}")
+    st.caption(f"Price: {p.price if p.price is not None else 'Unknown'} {p.currency} Â· {p.state('price')} Â· Collected {p.collected_at}")
+    if p.url:
+        st.link_button("Open original listing", p.url)
+    with st.expander("Advanced product evidence"):
+        st.json({"record": p.record(), "field_status": {k: p.state(k) for k in p.record()}})
     if st.button("Save selected product"):
         store.save(p)
         st.success("Saved")
@@ -201,11 +220,12 @@ def opportunity_view(items, dropship=False):
     st.caption("Sale prices are observed asking prices, not evidence of completed sales. Profit is a scenario estimate.")
     if rows:
         index = st.selectbox("Inspect opportunity", range(len(rows)),
-            format_func=lambda i: f"{rows[i]['title']} → {rows[i]['retailer']} · {rows[i]['score']:.1f}")
+            format_func=lambda i: f"{rows[i]['title']} â†’ {rows[i]['retailer']} Â· {rows[i]['score']:.1f}")
         row = rows[index]
-        st.json({"match": {k: row[k] for k in ("match_kind", "match_confidence", "match_reason", "review")},
-                 "score_breakdown": row["breakdown"], "financial_assumptions": row["assumptions"],
-                 "profit_status": row["profit_status"]})
+        with st.expander("Match, score and calculation details"):
+            st.json({"match": {k: row[k] for k in ("match_kind", "match_confidence", "match_reason", "review")},
+                     "score_breakdown": row["breakdown"], "financial_assumptions": row["assumptions"],
+                     "profit_status": row["profit_status"]})
         decision = st.selectbox("Manual equivalence decision", ["automatic", "approve", "reject"])
         note = st.text_input("Review evidence / variant checks")
         if st.button("Save match review"):
@@ -219,7 +239,7 @@ def opportunity_view(items, dropship=False):
 
 
 st.title(page)
-st.caption("Local research workspace · USD economics · Evidence and assumptions stay visible")
+st.caption("Local research workspace Â· USD economics Â· Evidence and assumptions stay visible")
 
 if page == "Overview":
     cols = st.columns(4)
@@ -228,12 +248,28 @@ if page == "Overview":
     cols[2].metric("Research runs", len(store.history()))
     cols[3].metric("Saved products", len(store.saved()))
     st.subheader("Start researching")
-    st.write("Use Source Manager to import a dataset or collect from an authorized endpoint. Enable Demo dataset in the sidebar to explore fictional examples. All data stays in local SQLite.")
+    st.write("Choose sources and filters, then run live research. Source Manager explains which sources are connected, which need permission, and which have not been verified. CSV is an optional fallback.")
+    if st.button("Start New Research", type="primary"):
+        navigate("New Research")
+    if st.button("Open setup guide"):
+        navigate("Setup")
     if products:
         table([p.record() for p in products[:100]])
     else:
         st.info("Your research library is empty. No sample data has been loaded automatically.")
     st.caption("Opportunity scores organize research priorities. They do not predict actual sales.")
+
+elif page == "Setup":
+    setup_wizard(store)
+
+elif page == "New Research":
+    new_research(store)
+
+elif page == "Research Results":
+    results_dashboard(store, assumptions, weights)
+
+elif page == "Help":
+    help_center()
 
 elif page in {"Product Search", "Broad Discovery"}:
     query = st.text_input("Product, model, GTIN, brand or keywords" if page == "Product Search" else "Optional discovery keywords")
@@ -248,7 +284,7 @@ elif page in {"Product Search", "Broad Discovery"}:
     if st.button("Save research session"):
         store.add_run(f"{page}: {query or ', '.join(selected_categories) or 'all'}", subset)
         st.success("Session snapshot saved")
-    st.caption("Search and discovery use the collected library. Configure and collect enabled sources in Source Manager to refresh it.")
+    st.caption("This screen searches your collected library. To discover new products automatically, use Start New Research.")
     product_details(subset)
 
 elif page == "Retail Deal Hunter":
@@ -269,63 +305,74 @@ elif page in {"Dropshipping Opportunities", "Product Comparison"}:
         st.json(calculate(cost, sale, shipping, quantity, assumptions))
 
 elif page == "Source Manager":
-    st.subheader("Source access and configuration")
-    table([{"source": name, "role": s["role"], "kind": s["kind"], "status": status(s)} for name, s in sources.items()])
-    name = st.selectbox("Edit source", ["Add new source", *sources])
-    current = sources.get(name, {})
-    with st.form("source_form"):
-        source_name = st.text_input("Source name", current.get("name", ""))
-        role = st.selectbox("Role", ["supplier", "retailer"], index=0 if current.get("role") == "supplier" else 1)
-        kinds = ["import", "csv", "json", "public_page", "browser"]
-        kind = st.selectbox("Connector", kinds, index=kinds.index(current.get("kind", "import")))
-        url = st.text_input("Authorized HTTPS endpoint / single product page", current.get("url", ""))
-        host = st.text_input("Exact allowed hostname (no scheme or path)", current.get("allowed_host", ""))
-        enabled = st.checkbox("Enabled", current.get("enabled", True))
-        permission = st.checkbox("I have verified that this endpoint permits this automated access", current.get("permission_confirmed", False))
-        interval = st.number_input("Minimum request interval (seconds)", 0.5, 60.0, float(current.get("interval", 2)))
-        cache = st.number_input("Cache duration (seconds)", 0, 604800, int(current.get("cache_seconds", 3600)))
-        st.caption("JSON/CSV endpoints must supply normalized records. Browser mode requires an explicitly installed Chromium and only parses static structured data; JavaScript is disabled.")
-        if st.form_submit_button("Save source"):
-            if not source_name.strip() or len(source_name) > 100:
-                st.error("Provide a source name of 1–100 characters")
-            elif url and ("?" in url or "#" in url):
-                st.error("Keep tokens and query credentials out of source URLs; use an authorized credential-free feed or import")
-            else:
-                store.put_config("source", source_name.strip(), {"name": source_name.strip(), "role": role,
-                    "kind": kind, "url": url.strip(), "allowed_host": host.strip().lower(), "enabled": enabled,
-                    "permission_confirmed": permission, "interval": interval, "cache_seconds": cache})
-                st.rerun()
-    st.subheader("Collect from configured sources")
-    choices = [name for name, s in sources.items() if status(s).startswith("configured")]
-    chosen = st.multiselect("Sources to collect (bounded endpoints only)", choices)
-    refresh = st.checkbox("Refresh cached endpoints")
-    if st.button("Collect selected sources", disabled=not chosen):
-        progress = st.progress(0)
-        collected = []
-        for index, name in enumerate(chosen):
+    connect_sources(store)
+    with st.expander("Advanced source configuration and optional CSV imports"):
+        st.subheader("Source access and configuration")
+        table([{"source": name, "role": s["role"], "kind": s["kind"], "status": status(s)} for name, s in sources.items()])
+        name = st.selectbox("Edit source", ["Add new source", *sources])
+        current = sources.get(name, {})
+        with st.form("source_form"):
+            source_name = st.text_input("Source name", current.get("name", ""))
+            role = st.selectbox("Role", ["supplier", "retailer"], index=0 if current.get("role") == "supplier" else 1)
+            kinds = ["import", "csv", "json", "public_page", "browser", "browser_catalog"]
+            kind = st.selectbox("Connector", kinds, index=kinds.index(current.get("kind", "import")))
+            url = st.text_input("Authorized HTTPS endpoint / single product page", current.get("url", ""))
+            host = st.text_input("Exact allowed hostname (no scheme or path)", current.get("allowed_host", ""))
+            search_template = st.text_input("Permitted catalog URL template (browser_catalog only)", current.get("search_url_template", ""),
+                help="HTTPS on the allowed host; optional {keywords}, {category}, {page}. No credentials, hidden APIs or protected routes.")
+            product_prefix = st.text_input("Product listing path prefix", current.get("product_path_prefix", "/product/"))
+            permission_reference = st.text_input("Automation permission reference", current.get("permission_reference", ""),
+                help="Reference the site's published permission or your written authorization. A public page alone is not permission.")
+            enabled = st.checkbox("Enabled", current.get("enabled", True))
+            permission = st.checkbox("I have verified that this endpoint permits this automated access", current.get("permission_confirmed", False))
+            interval = st.number_input("Minimum request interval (seconds)", 0.5, 60.0, float(current.get("interval", 2)))
+            cache = st.number_input("Cache duration (seconds)", 0, 604800, int(current.get("cache_seconds", 3600)))
+            st.caption("JSON/CSV endpoints must supply normalized records. Browser mode requires an explicitly installed Chromium and only parses static structured data; JavaScript is disabled.")
+            if st.form_submit_button("Save source"):
+                if not source_name.strip() or len(source_name) > 100:
+                    st.error("Provide a source name of 1â€“100 characters")
+                elif url and ("?" in url or "#" in url):
+                    st.error("Keep tokens and query credentials out of source URLs; use an authorized credential-free feed or import")
+                elif kind == "browser_catalog" and (not search_template.startswith("https://") or not permission_reference.strip()):
+                    st.error("A permitted HTTPS catalog template and automation permission reference are required.")
+                else:
+                    store.put_config("source", source_name.strip(), {"name": source_name.strip(), "role": role,
+                        "kind": kind, "url": url.strip(), "allowed_host": host.strip().lower(), "enabled": enabled,
+                        "permission_confirmed": permission, "interval": interval, "cache_seconds": cache,
+                        "search_url_template": search_template.strip(), "product_path_prefix": product_prefix.strip(),
+                        "permission_reference": permission_reference.strip()})
+                    st.rerun()
+        st.subheader("Collect from configured sources")
+        choices = [name for name, s in sources.items() if status(s).startswith("configured") and s.get("kind") != "browser_catalog"]
+        chosen = st.multiselect("Sources to collect (bounded endpoints only)", choices)
+        refresh = st.checkbox("Refresh cached endpoints")
+        if st.button("Collect selected sources", disabled=not chosen):
+            progress = st.progress(0)
+            collected = []
+            for index, name in enumerate(chosen):
+                try:
+                    with st.spinner(f"Collecting {name}â€¦"):
+                        result, cached = collect(sources[name], store, refresh)
+                    collected.extend(result)
+                    st.success(f"{name}: {len(result)} records ({'cache' if cached else 'live endpoint'})")
+                except Exception as exc:
+                    st.error(f"{name}: {str(exc) if isinstance(exc, ValueError) else 'Collection failed; check configuration, network and browser installation'}")
+                progress.progress((index + 1) / len(chosen))
+            if collected:
+                store.add_run("Authorized source collection", collected)
+                st.success("Collection saved. Open a research screen to analyze it.")
+        st.subheader("Import product CSV")
+        st.download_button("Download demo CSV / column template", csv_bytes([p.record() for p in demo_products()]),
+                           "product-template.csv", "text/csv")
+        upload = st.file_uploader("UTF-8 product CSV (10 MiB / 10,000 rows)", type=["csv"])
+        label = st.text_input("Import/session label", "Product import")
+        if st.button("Validate and import", disabled=upload is None):
             try:
-                with st.spinner(f"Collecting {name}…"):
-                    result, cached = collect(sources[name], store, refresh)
-                collected.extend(result)
-                st.success(f"{name}: {len(result)} records ({'cache' if cached else 'live endpoint'})")
-            except Exception as exc:
-                st.error(f"{name}: {str(exc) if isinstance(exc, ValueError) else 'Collection failed; check configuration, network and browser installation'}")
-            progress.progress((index + 1) / len(chosen))
-        if collected:
-            store.add_run("Authorized source collection", collected)
-            st.success("Collection saved. Open a research screen to analyze it.")
-    st.subheader("Import product CSV")
-    st.download_button("Download demo CSV / column template", csv_bytes([p.record() for p in demo_products()]),
-                       "product-template.csv", "text/csv")
-    upload = st.file_uploader("UTF-8 product CSV (10 MiB / 10,000 rows)", type=["csv"])
-    label = st.text_input("Import/session label", "Product import")
-    if st.button("Validate and import", disabled=upload is None):
-        try:
-            imported = import_csv(upload.getvalue(), force_demo=demo)
-            store.add_run(label, imported)
-            st.success(f"Imported {len(imported)} records. CSV claims are estimated unless states explicitly identifies verified fields.")
-        except (ValueError, UnicodeError, TypeError):
-            st.error("Invalid CSV. Check column names, numeric values, timestamps, and JSON specs/states. Nothing was imported.")
+                imported = import_csv(upload.getvalue(), force_demo=demo)
+                store.add_run(label, imported)
+                st.success(f"Imported {len(imported)} records. CSV claims are estimated unless states explicitly identifies verified fields.")
+            except (ValueError, UnicodeError, TypeError):
+                st.error("Invalid CSV. Check column names, numeric values, timestamps, and JSON specs/states. Nothing was imported.")
 
 elif page == "Google Ads Keyword Research":
     st.write("Read-only keyword ideas and historical metrics. This application cannot create campaigns or spend ad money.")
@@ -341,7 +388,7 @@ elif page == "Google Ads Keyword Research":
     cache_duration = st.number_input("Keyword cache seconds", 0, 604800, 86400)
     if st.button("Request Google keyword ideas"):
         try:
-            with st.spinner("Requesting one bounded page of keyword ideas…"):
+            with st.spinner("Requesting one bounded page of keyword ideasâ€¦"):
                 rows, cached = keyword_ideas(store, list(dict.fromkeys([k.strip() for k in text.splitlines() if k.strip()] + suggested)),
                     country, language, interval, cache_duration)
             store.put_config("keywords", "latest", {"rows": rows})
@@ -396,7 +443,7 @@ elif page == "API Settings and Diagnostics":
     st.json(diagnostics())
     st.json(store.get_config("diagnostic", "google") or {"last_request": "No live request attempted"})
     st.write("Credentials are read from process environment only. No secrets are shown or saved through this dashboard. Restart after rotation. See docs/GOOGLE_ADS.md.")
-    st.json({"database": "SQLite initialized", "migrations": [1], "source_count": len(sources),
+    st.json({"database": "SQLite initialized", "migrations": [1, 2], "source_count": len(sources),
              "UI_default": "127.0.0.1:8501", "browser": "optional; explicit Chromium installation required",
              "data_storage": "data/", "logs": "rotating structured safe-event logs"})
 
