@@ -3,6 +3,8 @@ from dataclasses import asdict
 import hashlib
 import json
 import time
+from pathlib import Path
+import traceback
 from typing import Callable
 
 from pof.connectors import collect
@@ -99,6 +101,11 @@ def run_research(query: ResearchQuery, names: list[str], store, credentials: dic
             message = str(exc) if isinstance(exc, SourceError) else "Collection could not finish safely. Check source settings, network access and provider permissions."
             code = exc.code if isinstance(exc, SourceError) else "collection_failed"
             record_attempt(store, name, error=message, code=code)
+            if not isinstance(exc, SourceError):
+                # Type/location only: raw exception text can contain credential-bearing URLs.
+                frames = traceback.extract_tb(exc.__traceback__)
+                store.put_config("collection_diagnostic", name, {"exception_type": type(exc).__name__,
+                    "locations": [f"{Path(frame.filename).name}:{frame.lineno}" for frame in frames[-4:]]})
             reports.append({"source": name, "products": 0, "status": "failed", "error": message, "code": code})
         if progress:
             progress((index + 1) / len(names), f"Finished {name}", len(products))

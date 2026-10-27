@@ -15,3 +15,11 @@ Every adapter must:
 JSON feeds contain an array of Product-field objects. CSV follows the same names. No transforms, Python expressions, shell commands or serialized Python objects are accepted. Product page extraction supports top-level schema.org Product JSON-LD or Product entries in an @graph, one unambiguous offer, reported price/currency and basic identifiers/ratings. AggregateOffer/range prices are not selected as unit quotes. Images are not fetched/rendered by default; records may retain URLs only where reuse permission is confirmed.
 
 The optional browser adapter explicitly requires Chromium installation; it only parses static structured data. Pages requiring login, dynamic scripts or protection challenges should use a compliant authorized API/export/import alternative.
+
+## Implemented live profiles
+
+Best Buy native browser, Amazon public catalog and AliExpress public catalog were verified against actual products on October 27, 2026. `BestBuyConnector` is a separate optional official API adapter with contract tests but no live key verification. `run_research` always preserves real/demo separation, source-specific failure messages and observed timestamps.
+
+Use InstallBrowser.cmd for the project-local official Chromium distribution. The native profile runs public site scripts in a sandbox with a scrubbed child environment and restricted same-origin reads. Amazon/AliExpress parse pre-fetched public HTML in JS-disabled DOMs. Do not extend the native request policy with state-changing operations, private credentials or arbitrary host access.
+
+See SOURCE_ACCESS.md for actual failed probes and remaining integrations. A readable page is not verified product discovery; require observed product identity and price evidence and record their limits. Broad category search hints are distinguished from exact provider taxonomies. AliExpress minimum/coupon quotes and non-USD prices remain explicit and are not silently converted into confirmed supplier costs.

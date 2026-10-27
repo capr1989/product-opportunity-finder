@@ -5,7 +5,7 @@ Assets: host/VM integrity, OAuth credentials, research history, private reposito
 | Threat | Controls | Residual risk |
 |---|---|---|
 | SSRF/rebinding/metadata access | HTTPS allowlist, all DNS addresses public, IP-pinned connection, TLS SNI, redirects blocked, no env proxy | Network stack/TLS vulnerabilities; trusted API client's own behavior |
-| Hostile page/browser exploit | Dedicated VM, no personal profile, ephemeral sandboxed browser, JS disabled, only prechecked document, resource blocking and timeouts | Parser/browser defects; VM escape risk |
+| Hostile page/browser exploit | Dedicated VM, ephemeral sandboxed browser, scrubbed child environment; static parsers disable JS, native profile restricts destinations/read operations and requests | Native site JavaScript/browser defects, asset allocation and VM escape risks; not a hard OS memory quota |
 | Huge or malformed content | Byte/row limits, strict numeric/schema validation, safe JSON/HTML parsing, bounded collection | Python parser resource use inside capped documents; no hard OS memory quota |
 | Credential leakage | Env-only OAuth, ignore rules, safe event fields, generic external errors, private repository, scan before commits | Same-user process compromise, debug logging enabled outside app, human mistakes |
 | Malicious spreadsheet content | Prefix dangerous leading characters, remove illegal controls, exports held in memory, fixed download names | Office vulnerabilities, users removing escaping |

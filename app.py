@@ -24,7 +24,7 @@ from pof.ui_live import (connect_sources, help_center, navigate, new_research, r
                          setup_wizard, METRIC_HELP)
 
 ROOT = Path(__file__).resolve().parent
-st.set_page_config(page_title="Product Opportunity Finder", page_icon="ðŸ”Ž", layout="wide")
+st.set_page_config(page_title="Product Opportunity Finder", page_icon="🔎", layout="wide")
 
 
 @st.cache_resource
@@ -44,7 +44,7 @@ store = initialize(os.environ.get("POF_DATA_DIR", str(ROOT / "data")))
 PAGES = ["Overview", "Setup", "New Research", "Research Results", "Product Search", "Broad Discovery", "Retail Deal Hunter", "Dropshipping Opportunities",
          "Product Comparison", "Google Ads Keyword Research", "Saved Products", "Research History",
          "Source Manager", "API Settings and Diagnostics", "Export Center", "Help"]
-st.sidebar.title("ðŸ”Ž Opportunity Finder")
+st.sidebar.title("🔎 Opportunity Finder")
 if "next_workspace" in st.session_state:
     st.session_state["workspace"] = st.session_state.pop("next_workspace")
 if "workspace" not in st.session_state:
@@ -57,7 +57,7 @@ if page in {"New Research", "Research Results"}:
 demo = st.sidebar.toggle("Demo dataset", value=False, key="demo_dataset", disabled=page in {"New Research", "Research Results"},
     help="Fictional data stays separate from real research. Live research screens always use real data.")
 if demo:
-    st.warning("DEMO MODE Â· All displayed products and metrics are fictional. No live evidence or sales predictions.")
+    st.warning("DEMO MODE · All displayed products and metrics are fictional. No live evidence or sales predictions.")
     if st.sidebar.button("Load / reset demo snapshots"):
         store.add_run("DEMO fixtures", demo_products())
         st.rerun()
@@ -193,10 +193,10 @@ def product_details(items):
     if not items:
         return
     index = st.selectbox("Inspect / save product", range(len(items)),
-                         format_func=lambda i: f"{items[i].source} Â· {items[i].title}")
+                         format_func=lambda i: f"{items[i].source} · {items[i].title}")
     p = items[index]
-    st.write(f"**{p.title}** Â· {p.source}")
-    st.caption(f"Price: {p.price if p.price is not None else 'Unknown'} {p.currency} Â· {p.state('price')} Â· Collected {p.collected_at}")
+    st.write(f"**{p.title}** · {p.source}")
+    st.caption(f"Price: {p.price if p.price is not None else 'Unknown'} {p.currency} · {p.state('price')} · Collected {p.collected_at}")
     if p.url:
         st.link_button("Open original listing", p.url)
     with st.expander("Advanced product evidence"):
@@ -220,7 +220,7 @@ def opportunity_view(items, dropship=False):
     st.caption("Sale prices are observed asking prices, not evidence of completed sales. Profit is a scenario estimate.")
     if rows:
         index = st.selectbox("Inspect opportunity", range(len(rows)),
-            format_func=lambda i: f"{rows[i]['title']} â†’ {rows[i]['retailer']} Â· {rows[i]['score']:.1f}")
+            format_func=lambda i: f"{rows[i]['title']} → {rows[i]['retailer']} · {rows[i]['score']:.1f}")
         row = rows[index]
         with st.expander("Match, score and calculation details"):
             st.json({"match": {k: row[k] for k in ("match_kind", "match_confidence", "match_reason", "review")},
@@ -239,7 +239,7 @@ def opportunity_view(items, dropship=False):
 
 
 st.title(page)
-st.caption("Local research workspace Â· USD economics Â· Evidence and assumptions stay visible")
+st.caption("Local research workspace · USD economics · Evidence and assumptions stay visible")
 
 if page == "Overview":
     cols = st.columns(4)
@@ -330,13 +330,13 @@ elif page == "Source Manager":
             st.caption("JSON/CSV endpoints must supply normalized records. Browser mode requires an explicitly installed Chromium and only parses static structured data; JavaScript is disabled.")
             if st.form_submit_button("Save source"):
                 if not source_name.strip() or len(source_name) > 100:
-                    st.error("Provide a source name of 1â€“100 characters")
+                    st.error("Provide a source name of 1–100 characters")
                 elif url and ("?" in url or "#" in url):
                     st.error("Keep tokens and query credentials out of source URLs; use an authorized credential-free feed or import")
                 elif kind == "browser_catalog" and (not search_template.startswith("https://") or not permission_reference.strip()):
                     st.error("A permitted HTTPS catalog template and automation permission reference are required.")
                 else:
-                    store.put_config("source", source_name.strip(), {"name": source_name.strip(), "role": role,
+                    store.put_config("source", source_name.strip(), {**current, "name": source_name.strip(), "role": role,
                         "kind": kind, "url": url.strip(), "allowed_host": host.strip().lower(), "enabled": enabled,
                         "permission_confirmed": permission, "interval": interval, "cache_seconds": cache,
                         "search_url_template": search_template.strip(), "product_path_prefix": product_prefix.strip(),
@@ -351,7 +351,7 @@ elif page == "Source Manager":
             collected = []
             for index, name in enumerate(chosen):
                 try:
-                    with st.spinner(f"Collecting {name}â€¦"):
+                    with st.spinner(f"Collecting {name}…"):
                         result, cached = collect(sources[name], store, refresh)
                     collected.extend(result)
                     st.success(f"{name}: {len(result)} records ({'cache' if cached else 'live endpoint'})")
@@ -388,7 +388,7 @@ elif page == "Google Ads Keyword Research":
     cache_duration = st.number_input("Keyword cache seconds", 0, 604800, 86400)
     if st.button("Request Google keyword ideas"):
         try:
-            with st.spinner("Requesting one bounded page of keyword ideasâ€¦"):
+            with st.spinner("Requesting one bounded page of keyword ideas…"):
                 rows, cached = keyword_ideas(store, list(dict.fromkeys([k.strip() for k in text.splitlines() if k.strip()] + suggested)),
                     country, language, interval, cache_duration)
             store.put_config("keywords", "latest", {"rows": rows})

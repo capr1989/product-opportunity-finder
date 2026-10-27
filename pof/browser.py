@@ -9,7 +9,7 @@ LOCK = threading.Lock()
 
 def browser_env():
     """Do not pass application credential environment variables to Chromium children."""
-    forbidden = ("TOKEN", "SECRET", "PASSWORD", "API_KEY", "CREDENTIAL", "AUTH", "PROXY")
+    forbidden = ("TOKEN", "SECRET", "PASSWORD", "KEY", "CREDENTIAL", "AUTH", "PROXY")
     prefixes = ("GOOGLE_", "BESTBUY_", "CJ_", "EBAY_", "AWS_", "AZURE_")
     return {name: value for name, value in os.environ.items()
             if not name.upper().startswith(prefixes) and not any(word in name.upper() for word in forbidden)}

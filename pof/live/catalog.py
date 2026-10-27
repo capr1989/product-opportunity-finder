@@ -17,12 +17,12 @@ POLICIES = {
         "url": "https://affiliate-program.amazon.com/creatorsapi/docs/en-us/introduction",
         "setup": "No API key is required for the implemented public-page method. Select this source in New Research. Creators API remains a separate optional future route requiring eligibility and credentials.",
         "implemented": True, "credential": ""},
-    "Walmart": {"method": "Restricted", "connector": "Marketplace catalog API route identified; not implemented",
+    "Walmart": {"method": "Access pending", "connector": "Public request redirected; product extraction not verified",
         "reason": "Site terms restrict automated collection without permission. Seller Marketplace catalog search requires approved access and does not itself guarantee consumer prices.",
         "url": "https://www.walmart.com/help/article/walmart-com-terms-of-use/3b75080af40340d6bbd596f116fae5a0/",
         "setup": "Review Walmart Developer Portal and approved partner/seller access. A seller account is not automatically permission for every retail-data use.",
         "implemented": False, "credential": ""},
-    "Target": {"method": "Restricted", "connector": "Approved partner/feed route required; no connector implemented",
+    "Target": {"method": "Access pending", "connector": "Public HTML retrieved; product extraction not verified",
         "reason": "Terms restrict automated product-data collection. Approved agents' access does not grant this local application permission.",
         "url": "https://www.target.com/c/terms-conditions/-/N-4sr7l",
         "setup": "Obtain a licensed partner feed or written automation permission before enabling an adapter.",
@@ -49,13 +49,13 @@ def source_status(name, config, state, has_key=False):
     browser_mode = name == "Best Buy" and config.get("bestbuy_method", "api" if has_key else "browser") == "browser"
     method = "Live Scraping" if browser_mode else "Live API" if name == "Best Buy" and has_key else policy.get("method", "Import Only")
     ready = (name == "Best Buy" and (browser_mode or has_key)) or name in {"Amazon US", "AliExpress"}
-    if browser_mode and state.get("error_code") in {"access_denied", "access_barrier", "credentials_rejected"}:
+    if state.get("error_code") in {"access_denied", "access_barrier", "credentials_rejected"}:
         method = "Restricted"
     if configured and config.get("permission_confirmed") and (config.get("url") or config.get("search_url_template")):
         method = "Live Scraping" if config["kind"] in {"browser", "public_page", "browser_catalog"} else "Live Feed"
         ready = True
     return {"Source": name, "Collection method": method, "Connector available": bool(ready or policy.get("implemented")),
-        "Credentials": "Not required (browser mode)" if browser_mode else "Required for optional API" if name == "Best Buy" and not has_key else "Configured" if has_key else "Not requested",
+        "Credentials": "Not required (browser mode)" if browser_mode or name in {"Amazon US", "AliExpress"} else "Required for optional API" if name == "Best Buy" and not has_key else "Configured" if has_key else "Not requested",
         "Verification": "Actual products retrieved" if state.get("verified_live") else "Not live-verified",
         "Last successful collection": state.get("last_success", "Never"),
         "Last error": state.get("last_error", ""), "Products last found": state.get("last_count", 0),

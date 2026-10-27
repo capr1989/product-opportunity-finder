@@ -26,3 +26,13 @@ Financial arithmetic uses Decimal for intermediate calculations and serializes f
 HTTP DNS pinning addresses DNS rebinding between validation and connection. The URL host becomes the checked IP; Host and TLS SNI retain the original hostname. Every retry revalidates DNS. Redirects are rejected rather than recursively trusting new destinations. Optional browser parsing receives a pre-fetched checked document; it cannot fetch subresources and runs with JS disabled, sandbox enabled, no persistent profile or downloads. This sacrifices dynamic extraction to reduce attack surface.
 
 There is no optional AI runtime, purchasing, account mutation, campaign management, Shopify, alerts or scheduling. Those can later consume the snapshot/domain interfaces following separate threat reviews.
+
+## Live discovery extension
+
+`pof/live/query.py` defines bounded typed catalog requests. `discovery.py` isolates source failures, progress, immutable runs and safe connection state. `catalog.py` separates adapter implementation from actual live verification. `ui_live.py` provides setup, research, results, connections and Help. The original library/history/matching/export modules remain available.
+
+Best Buy native browsing is a distinct adapter: normal site scripts run only inside ephemeral sandboxed Chromium, DNS is pinned through host resolver rules, network destinations/methods are restricted, and explicit read-only GraphQL queries are distinguished from mutations. Browser child environments omit credential variables. A public country choice is a normal site interaction, not an authentication bypass. Actual current price widgets were observed and regression-tested in real Chromium.
+
+Amazon and AliExpress public HTML is fetched through SafeHTTP and parsed in JS-disabled, network-blocked Playwright DOMs. AliExpress's JSON bootstrap is decoded with JSONDecoder only; surrounding JavaScript is never evaluated. Only selected product fields are retained, not tracking/session payloads. Reported currency and minimum/coupon price basis remain explicit, and minimum quotes cannot become automatic unit profits.
+
+Migration 2 adds snapshot content-expiry metadata. Best Buy API payloads have a maximum 72-hour retention and are purged from history/cache on startup and reads; other history remains append-only. Retention exceptions are deliberate provider-policy constraints. Downloaded files and offline backups require user management. Native browser DOM size limits apply after parsing and do not provide an OS memory sandbox; use the dedicated VM.

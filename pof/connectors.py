@@ -61,6 +61,8 @@ def status(source: dict) -> str:
     if not source.get("enabled"):
         return "disabled"
     if source.get("kind") == "import":
+        if source.get("name") in {"Best Buy", "Amazon US", "AliExpress"}:
+            return "live discovery adapter available — use New Research; see Source Manager for actual verification"
         return "import-only — provider API/automation access not configured"
     if not source.get("permission_confirmed"):
         return "restricted — confirm provider permission before collection"

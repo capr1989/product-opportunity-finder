@@ -84,6 +84,10 @@ def connect_sources(store):
         with st.expander("Connection diagnostics"):
             st.write("Last attempted:", state.get("last_attempt", "Never"))
             st.write("Issue:", state.get("error_code", "unknown"))
+            technical = store.get_config("collection_diagnostic", name)
+            if technical:
+                st.write("Technical classification:", technical["exception_type"])
+                st.write("Code locations:", ", ".join(technical["locations"]))
     if name == "Best Buy":
         from pof.live.bestbuy_browser import browser_installed
         if browser_installed():
