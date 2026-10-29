@@ -19,6 +19,7 @@ from pof.live.query import ResearchQuery
 from pof.matching import match, normalize, variants
 from pof.models import now
 from pof.research import pair_id
+from pof.scoring import DEFAULT_WEIGHTS, score
 from pof.storage import Store
 
 TAXONOMY = {
@@ -69,6 +70,11 @@ def canonical(text):
     for old, new in SYNONYMS.items():
         text = text.replace(old, new)
     return text
+
+
+def followup_query(product):
+    text = product.brand + " " + product.model if product.model else product.title
+    return " ".join(canonical(text).split()[:12])[:180]
 
 
 def plan_searches(settings, coverage):
@@ -162,13 +168,15 @@ def build_leads(products, settings, assumptions=None, reviews=None):
                     reasons.append("Minimum inventory commitment exceeds your budget")
             gap = b.price - a.price if a.price is not None and b.price is not None and a.currency == b.currency else None
             state = "Rejected / Unattractive" if reasons else "Financially Evaluated" if financial["known"] else "Potential Lead"
+            ranking, breakdown = score(a, financial, m.confidence, DEFAULT_WEIGHTS)
             rows.append({"id": key, "buy_id": Store.identity(a), "sell_id": Store.identity(b),
                          "state": state, "similarity": round(similarity, 1), "match_kind": m.kind,
                          "match_confidence": m.confidence, "match_reason": m.reason,
                          "observed_gap": gap, "currency": a.currency if gap is not None else "",
                          "financial": financial, "assumptions": asdict(assumptions), "missing": missing,
                          "reasons": reasons, "budget_feasible": feasible,
-                         "demand": "Observed keyword evidence; not sales" if a.monthly_searches is not None else "Unknown",
+                         "score": ranking, "breakdown": breakdown,
+                         "demand": "Verified keyword evidence; not sales" if a.monthly_searches is not None and a.state("monthly_searches") == "verified" else "Unknown",
                          "next_step": missing[0] if missing else "Review selling-price and cost assumptions before investing",
                          "promise": "Observed listing price difference; not profit" if gap is not None and gap > 0 else "Comparable listings worth checking"})
             paired.update((Store.identity(a), Store.identity(b)))
@@ -182,7 +190,7 @@ def build_leads(products, settings, assumptions=None, reviews=None):
                          "promise": "Catalog discovery candidate; no price gap established"})
     return sorted(rows, key=lambda r: (r["state"] != "Rejected / Unattractive",
                   r["financial"].get("contribution_profit", -1_000_000),
-                  r["observed_gap"] is not None and r["observed_gap"] > 0, r["match_confidence"]), reverse=True)[:100]
+                  r["observed_gap"] is not None and r["observed_gap"] > 0, r.get("score", 0), r["match_confidence"]), reverse=True)[:100]
 
 
 def session_products(store, session):
@@ -217,10 +225,9 @@ def run_session(store, settings, credentials, *, session_id=None, seeds=(), prog
         if settings.mode == "Deep Research" and not seeds:
             plan = plan[:max(1, settings.query_limit // 2)]
         if settings.mode == "Deep Research" and seeds:
-            plan = [{"category": p.category or "Follow-up", "query": " ".join(
-                (p.brand + " " + p.model if p.model else canonical(p.title)).split()[:12])[:180],
+            plan = [{"category": "Follow-up", "query": followup_query(p),
                 "strategy": "supplier-first" if p.role == "supplier" else "retailer-first"}
-                for p in seeds if not p.demo][:settings.query_limit]
+                for p in seeds if not p.demo and followup_query(p)][:settings.query_limit]
         names = available_sources(store, credentials, settings)
         session = {"id": uuid.uuid4().hex, "created": now(), "settings": asdict(settings),
                    "plan": plan, "sources": names, "completed": [], "run_ids": [],
@@ -281,10 +288,10 @@ def run_session(store, settings, credentials, *, session_id=None, seeds=(), prog
         if index == len(session["plan"]) - 1 and not session["followups_planned"]:
             seen = {canonical(t["query"]) for t in session["plan"]}
             for p in session_products(store, session):
-                query = " ".join((p.brand + " " + p.model if p.model else canonical(p.title)).split()[:12])[:180]
+                query = followup_query(p)
                 if not query or canonical(query) in seen or len(session["plan"]) >= settings.query_limit:
                     continue
-                session["plan"].append({"category": p.category or "Follow-up", "query": query,
+                session["plan"].append({"category": "Follow-up", "query": query,
                                         "strategy": "supplier-first" if p.role == "supplier" else "retailer-first"})
                 seen.add(canonical(query))
             session["followups_planned"] = True

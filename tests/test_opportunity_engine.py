@@ -89,3 +89,67 @@ def test_cancellation_and_demo_exclusion(tmp_path):
     assert result["status"] == "paused"
     assert result["completed"] == []
     assert not build_leads([replace(p, demo=True) for p in pair()], DiscoverySettings())
+
+
+def test_deep_research_uses_seed_and_generates_followups(tmp_path):
+    store = Store(tmp_path / "research.db")
+    original = pair()[0]
+    store.add_run("original evidence", [original])
+    queries = []
+
+    def collect(query, names, db, credentials, **kwargs):
+        queries.append(query.keywords)
+        return {"run_id": db.add_run("contract", pair()[1:]), "reports": []}
+
+    result = run_session(store, DiscoverySettings(mode="Deep Research", query_limit=2, source_limit=1), {},
+                         seeds=[original], collector=collect)
+    assert result["leads"][0]["sell_id"] is not None
+    assert result["plan"][0]["strategy"] == "supplier-first"
+    assert queries == ["usb c adapter hub"]
+    result = run_session(store, DiscoverySettings(mode="Deep Research", query_limit=2, source_limit=1), {}, collector=collect)
+    assert len(result["plan"]) == 2
+    assert result["plan"][1]["strategy"] == "retailer-first"
+
+
+def test_expired_licensed_economics_are_not_retained_in_sessions(tmp_path):
+    from datetime import datetime, timedelta, timezone
+    store = Store(tmp_path / "research.db")
+    a, b = pair()
+    a = replace(a, source="Best Buy", collection_method="bestbuy_api", retention_hours=1,
+                collected_at=(datetime.now(timezone.utc) - timedelta(hours=2)).isoformat())
+    store.add_run("expired", [a, b])
+    store.put_config("discovery_session", "test", {"leads": build_leads([a, b], DiscoverySettings())})
+    store.purge_expired()
+    assert store.get_config("discovery_session", "test")["leads"] == []
+
+
+def test_access_barrier_does_not_trigger_more_queries(tmp_path):
+    store = Store(tmp_path / "research.db")
+    calls = []
+
+    def collect(query, names, db, credentials, **kwargs):
+        calls.append(1)
+        return {"run_id": db.add_run("blocked", []), "reports": [
+            {"source": names[0], "error": "challenge", "code": "access_barrier"}]}
+
+    result = run_session(store, DiscoverySettings(query_limit=3, source_limit=1), {}, collector=collect)
+    assert len(calls) == 1
+    assert result["reports"][-1]["status"] == "skipped"
+
+
+def test_external_attributes_are_search_data_not_code():
+    from pof.opportunity_engine import followup_query
+    product = replace(pair()[0], brand="Acme\n", model='H1; $(command) <script>alert(1)</script>')
+    query = followup_query(product)
+    assert query == "acme h1 command script alert 1 script"
+    assert len(query) <= 180
+
+
+def test_manual_approval_does_not_override_variant_conflict_or_minimum_cost():
+    from pof.research import pair_id
+    a, b = pair()
+    a = replace(a, specs={"material": "plastic"}, shipping=0, moq=1, availability="in_stock")
+    b = replace(b, specs={"material": "steel"})
+    row = build_leads([a, b], DiscoverySettings(), reviews={pair_id(a, b): {"decision": "approve"}})[0]
+    assert row["state"] == "Rejected / Unattractive"
+    assert not row["financial"]["known"]

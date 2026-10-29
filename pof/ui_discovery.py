@@ -30,6 +30,7 @@ def opportunity_cards(store, session, assumptions):
     selected = []
     visible = [r for r in leads if r["state"] in states and
                (show_dismissed or decisions.get(r["id"], {}).get("decision") != "not interested")]
+    st.caption(f"{len(products)} unique product observations · {len(leads)} findings · showing {min(30, len(visible))} cards. Analysis is capped at 300 unique products and 100 ranked findings per session.")
     for row in visible[:30]:
         a, b = products[row["buy_id"]], products.get(row["sell_id"])
         with st.container(border=True):
@@ -64,7 +65,7 @@ def opportunity_cards(store, session, assumptions):
             if actions[0].button("Investigate further", key="deep_" + key):
                 st.session_state["deep_seed_ids"] = [Store.identity(a)]
                 st.session_state["deep_seed_run_ids"] = session["run_ids"]
-                st.session_state["discovery_mode"] = "Deep Research"
+                st.session_state["next_discovery_mode"] = "Deep Research"
                 st.rerun()
             if actions[1].button("Save opportunity", key="save_" + key):
                 store.save(a)
@@ -98,7 +99,7 @@ def opportunity_cards(store, session, assumptions):
     if selected and st.button("Deep Research selected candidates", type="primary"):
         st.session_state["deep_seed_ids"] = [Store.identity(p) for p in selected]
         st.session_state["deep_seed_run_ids"] = session["run_ids"]
-        st.session_state["discovery_mode"] = "Deep Research"
+        st.session_state["next_discovery_mode"] = "Deep Research"
         st.rerun()
     saved = [p for p in store.products(demo=False) if Store.identity(p) in store.saved()][:100]
     if saved:
@@ -108,13 +109,15 @@ def opportunity_cards(store, session, assumptions):
             if chosen and st.button("Use saved candidates for Deep Research"):
                 st.session_state["deep_seed_ids"] = chosen
                 st.session_state["deep_seed_run_ids"] = []
-                st.session_state["discovery_mode"] = "Deep Research"
+                st.session_state["next_discovery_mode"] = "Deep Research"
                 st.rerun()
 
 
 def discovery_home(store, *, guided=False):
     st.title("Find Products Worth Selling")
     st.write("Explore real catalogs, compare possible sourcing options, and see what still needs checking.")
+    if "next_discovery_mode" in st.session_state:
+        st.session_state["discovery_mode"] = st.session_state.pop("next_discovery_mode")
     mode = st.radio("Research depth", ["Quick Scan", "Deep Research"], horizontal=True, key="discovery_mode")
     st.caption("Quick Scan explores several categories. Deep Research searches for comparable offers and checks the evidence for selected products.")
     if not guided:
@@ -164,6 +167,9 @@ def discovery_home(store, *, guided=False):
             index=ids.index(st.session_state.get("discovery_session_id")) if st.session_state.get("discovery_session_id") in ids else 0,
             format_func=lambda x: f"{sessions[x]['settings']['mode']} · {sessions[x]['created']} · {sessions[x]['status']}")
         session = sessions[selected_id]
+        failures = {r["source"] + ": " + r["error"] for r in session["reports"] if r.get("error")}
+        for failure in sorted(failures):
+            st.warning(failure)
         if session["status"] in {"paused", "running"} and st.button("Resume research"):
             bar = st.progress(0.0)
             session = run_session(store, settings, credentials(), session_id=selected_id,
@@ -176,6 +182,8 @@ def discovery_home(store, *, guided=False):
                     st.warning(report["source"] + ": " + report["error"])
                 else:
                     st.write(report)
+                    if report.get("products") and report.get("priced_products") == 0:
+                        st.warning(report["source"] + " returned product identities but no readable prices. Economics remain unknown.")
         opportunity_cards(store, session, Assumptions(**session["assumptions"]))
     else:
         st.info("Ready to explore live products. No keywords or CSV files are required.")
