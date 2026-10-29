@@ -21,6 +21,7 @@ def decision_card(item, proof, store, *, scenarios=True, controls=None):
     financial = proof.get("financial", {"known": False})
     st.subheader(p.title)
     st.caption(f"{p.source} · {p.category or 'Category unknown'} · {p.collected_at} · Personal rating: {item['rating']}")
+    st.caption("Research status: " + (proof.get("best") or {}).get("state", "Potential Lead"))
     if p.image_url and p.image_reuse_permitted and (store.get_config("settings", "application") or {}).get("show_images", False):
         st.image(p.image_url, width=220)
     cols = st.columns(3)
@@ -43,7 +44,7 @@ def decision_card(item, proof, store, *, scenarios=True, controls=None):
     with st.expander("Sourcing, specifications and comparable offers"):
         st.write(f"Brand: {p.brand or 'Unknown'} · Model: {p.model or 'Unknown'} · Condition: {p.condition}")
         st.write(f"Source role: {p.role}. Retailers are not confirmed dropshipping suppliers.")
-        st.write(f"Shipping per unit: {money(p.shipping, p.currency)} · Minimum quantity: {p.moq if p.moq is not None else 'Unknown'}")
+        st.write(f"Shipping per unit: {money(p.shipping, p.currency)} ({p.state('shipping')}) · Minimum quantity: {p.moq if p.moq is not None else 'Unknown'} ({p.state('moq')})")
         st.write(f"Delivery days: {p.delivery_days if p.delivery_days is not None else 'Unknown'} · Stock: {p.availability}")
         st.write(f"Supplier ratings: {p.rating if p.rating is not None else 'Unknown'} / 5 · Reviews: {p.reviews if p.reviews is not None else 'Unknown'}")
         st.caption("Seller ratings are a limited reliability signal, not a fulfillment guarantee.")
@@ -179,6 +180,7 @@ def review_center(store, favorites=False, watchlist=False):
             "Estimated margin (%)": proofs.get(i["id"], {}).get("financial", {}).get("contribution_margin"),
             "Estimated inventory cash": proofs.get(i["id"], {}).get("financial", {}).get("inventory_commitment"),
             "Match confidence": proofs.get(i["id"], {}).get("confidence", 0),
+            "Research status": (proofs.get(i["id"], {}).get("best") or {}).get("state", "Potential Lead"),
             "Missing evidence": "; ".join(proofs.get(i["id"], {}).get("missing", [])),
             "Observed": i["product"].collected_at} for i in items])
         if grouping != "None":

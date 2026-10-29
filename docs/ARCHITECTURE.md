@@ -15,6 +15,12 @@ The UI calls small deterministic domain modules and a single local persistence s
 | Hard filters/preferences | pof/filters.py, scoring.py |
 | Persistence/config/cache | pof/storage.py |
 | Export | pof/exporting.py |
+| Personal curation and additive migration | pof/review_store.py |
+| Review evidence and hypothetical revenue | pof/review_analysis.py |
+| Review/Favorites UI and fixed focus guard | pof/ui_review.py, review_shortcuts.py |
+| Shopify draft CSV/research workbook | pof/shopify_export.py |
+| Validated defaults and settings UI | pof/settings.py, ui_settings.py |
+| OS credential storage | pof/credential_vault.py |
 | Network/file/export security and event logging | pof/security.py |
 
 SQLite migration 1 creates append-only product snapshots, runs, saved identities, configurations, reviews and cache tables. Migration versions are recorded. Future schema changes should add transactional versioned migration steps; do not reinterpret or overwrite old snapshots. WAL enables concurrent reads. Run IDs preserve original product payloads; latest views select the newest snapshot per stable source/role/URL-or-SKU identity. Demo flag is part of identity.

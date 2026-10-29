@@ -31,6 +31,8 @@ def shopify_export(items, prices, *, exclude_incomplete=True, status="draft", st
             warnings.append("An explicit positive selling price in your Shopify store currency is required")
         if p.price is None or p.source_attributes.get("price_basis") == "advertised_minimum":
             warnings.append("Selected-variant unit cost is unverified")
+        if p.currency != store_currency:
+            warnings.append("Source quote currency differs from store currency; cost omitted, no conversion assumed")
         if p.shipping is None or p.moq is None:
             warnings.append("Shipping or minimum quantity is unverified")
         if not p.image_url or not p.image_reuse_permitted:
