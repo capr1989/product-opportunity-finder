@@ -8,6 +8,7 @@ from pof.browser import LOCK, browser_env
 from pof.live.bestbuy_browser import configure_browser_path, money
 from pof.live.errors import SourceError
 from pof.models import Product
+from pof.product_evidence import catalog_labels, explicit_fields
 from pof.security import MAX_RESPONSE, SafeHTTP
 
 
@@ -79,7 +80,13 @@ class AmazonPublicConnector:
                     image_url = image.first.get_attribute("src") if image.count() else ""
                     if not image_url or not image_url.startswith("https://"):
                         image_url = ""
+                    attributes = catalog_labels(card.inner_text(timeout=2000))
+                    for attribute in ("brand", "model"):
+                        labeled = card.get_attribute("data-" + attribute)
+                        if labeled:
+                            attributes[attribute] = labeled[:400]
                     p = Product("Amazon US", title, role="retailer", sku=asin, url=f"https://www.amazon.com/dp/{asin}",
+                        **attributes,
                         price=listed_price, original_price=original, currency="USD", condition="unknown", moq=1,
                         target_country=query.target_market, image_url=image_url, image_reuse_permitted=False,
                         collection_method="amazon_public", source_attributes={"asin": asin,
@@ -88,6 +95,7 @@ class AmazonPublicConnector:
                             "delivery_to_target": "unverified", "broad_default": "Electronics catalog"})
                     p.states = {"title": "verified", "sku": "verified", "price": "verified" if listed_price is not None else "unavailable",
                         "original_price": "verified" if original is not None else "unavailable", "url": "verified", "moq": "estimated"}
+                    p.states.update({k: "verified" if getattr(p, k) else "unavailable" for k in ("brand", "model", "gtin", "specs")})
                     products.append(p)
                     seen.add(asin)
                     if len(products) >= query.limit:
@@ -131,7 +139,7 @@ def aliexpress_records(script, market, limit):
                 image = "https:" + image
             if image and not image.startswith("https://"):
                 image = ""
-            p = Product("AliExpress", title, role="supplier", sku=identifier,
+            p = Product("AliExpress", title, role="supplier", sku=identifier, **explicit_fields(value),
                 url=f"https://www.aliexpress.com/item/{identifier}.html", price=price.get("minPrice"),
                 currency=price.get("currencyCode") or "UNKNOWN", condition="unknown", target_country=market,
                 image_url=image, image_reuse_permitted=False, collection_method="aliexpress_public",
@@ -142,6 +150,7 @@ def aliexpress_records(script, market, limit):
                     "variant_confirmation_required": True, "delivery_to_target": "unverified"})
             p.states = {"title": "verified", "sku": "verified", "price": "verified" if p.price is not None else "unavailable",
                         "currency": "verified" if p.currency != "UNKNOWN" else "unavailable", "url": "verified"}
+            p.states.update({k: "verified" if getattr(p, k) else "unavailable" for k in ("brand", "model", "gtin", "specs")})
             products.append(p)
             seen.add(identifier)
     return products

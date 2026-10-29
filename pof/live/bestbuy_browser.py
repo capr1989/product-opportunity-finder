@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 from pof.live.errors import SourceError, from_http
 from pof.models import Product
+from pof.product_evidence import catalog_labels, explicit_fields
 from pof.security import MAX_RESPONSE, validate_url
 from pof.browser import browser_env
 
@@ -99,8 +100,10 @@ def normalize_card(record, market="US"):
         raise ValueError("Missing listing title")
     price = money(record.get("price_text", ""))
     original = money(record.get("original_price_text", ""))
+    attributes = explicit_fields(record)
     p = Product("Best Buy", title, role="retailer", url=url, sku=str(sku), currency="USD",
-        brand=title.split(" - ", 1)[0] if " - " in title else "", model=record.get("model", ""),
+        brand=attributes["brand"] or (title.split(" - ", 1)[0] if " - " in title else ""),
+        model=attributes["model"], gtin=attributes["gtin"], specs=attributes["specs"],
         condition="unknown", price=price, original_price=original,
         availability=record.get("availability", "unknown"), merchant="Best Buy", target_country=market,
         moq=1, collection_method="bestbuy_browser", image_url=record.get("image_url", ""),
@@ -111,8 +114,10 @@ def normalize_card(record, market="US"):
                 "original_price": "verified" if original is not None else "unavailable", "url": "verified",
                 "availability": "verified" if p.availability != "unknown" else "unavailable", "moq": "estimated",
                 "target_country": "estimated"}
-    p.states["brand"] = "estimated"
+    p.states["brand"] = "verified" if attributes["brand"] else "estimated"
     p.states["model"] = "verified" if p.model else "unavailable"
+    p.states["gtin"] = "verified" if p.gtin else "unavailable"
+    p.states["specs"] = "verified" if p.specs else "unavailable"
     return p
 
 
@@ -130,6 +135,7 @@ def card_records(page, limit):
         price = card.locator("[data-testid='price-block-customer-price'] .sr-only, .priceView-customer-price, [data-testid='customer-price'], .price-block .customer-price")
         original = card.locator("[data-testid='price-block-regular-price'], .priceView-previous-price, [data-testid='regular-price']")
         text = card.inner_text(timeout=1500)
+        attributes = catalog_labels(text)
         buttons = card.get_by_role("button", name=re.compile(r"^Add to Cart$", re.I))
         available = "unknown"
         if buttons.count() and buttons.first.is_enabled():
@@ -140,8 +146,7 @@ def card_records(page, limit):
         image_url = image.first.get_attribute("src") if image.count() else ""
         if image_url and not image_url.startswith("https://"):
             image_url = ""
-        records.append({"title": link.inner_text(timeout=1500), "url": link.get_attribute("href"),
-            "model": (re.search(r"\bModel:\s*([^\n]+)", text).group(1).strip() if re.search(r"\bModel:\s*([^\n]+)", text) else ""),
+        records.append({"title": link.inner_text(timeout=1500), "url": link.get_attribute("href"), **attributes,
             "sku": card.get_attribute("data-sku-id") or "", "availability": available,
             "price_text": price.first.inner_text(timeout=1500) if price.count() else "",
             "original_price_text": original.first.inner_text(timeout=1500) if original.count() else "",

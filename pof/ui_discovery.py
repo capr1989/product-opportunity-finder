@@ -4,6 +4,8 @@ from dataclasses import asdict
 import streamlit as st
 
 from pof.finance import Assumptions
+from pof.comparison import comparison_summary, profit_explanation
+from pof.ui_comparison import comparison_panel
 from pof.opportunity_engine import (DiscoverySettings, TAXONOMY, available_sources, build_leads,
                                     run_session, session_products)
 from pof.storage import Store
@@ -33,6 +35,7 @@ def opportunity_cards(store, session, assumptions):
     st.caption(f"{len(products)} unique product observations · {len(leads)} findings · showing {min(30, len(visible))} cards. Analysis is capped at 300 unique products and 100 ranked findings per session.")
     for row in visible[:30]:
         a, b = products[row["buy_id"]], products.get(row["sell_id"])
+        summary = comparison_summary(a, b, row)
         with st.container(border=True):
             st.subheader(a.title)
             st.write(row["state"])
@@ -49,11 +52,11 @@ def opportunity_cards(store, session, assumptions):
             st.text(f"Buy: {a.source} · {a.role} · observed {a.collected_at}")
             if b:
                 st.text(f"Selling reference: {b.source} · observed {b.collected_at}")
-            if row["missing"]:
-                st.warning("Still needed: " + "; ".join(row["missing"]))
+            if not financial["known"]:
+                st.warning(profit_explanation(row, summary))
             if row["reasons"]:
                 st.warning("; ".join(row["reasons"]))
-            st.write("Next step: " + row["next_step"])
+            st.write("Next step: " + summary["next_step"])
             st.caption("Demand: " + row["demand"])
             key = session["id"] + row["id"]
             safe_listing(a, "buy_" + key)
@@ -62,7 +65,7 @@ def opportunity_cards(store, session, assumptions):
             if st.checkbox("Select for Deep Research", key="select_" + key):
                 selected.append(a)
             actions = st.columns(3)
-            if actions[0].button("Investigate further", key="deep_" + key):
+            if actions[0].button("Investigate further", key="deep_" + key, help=summary["next_step"]):
                 st.session_state["deep_seed_ids"] = [Store.identity(a)]
                 st.session_state["deep_seed_run_ids"] = session["run_ids"]
                 st.session_state["next_discovery_mode"] = "Deep Research"
@@ -75,12 +78,7 @@ def opportunity_cards(store, session, assumptions):
                 store.put_config("opportunity_decision", row["id"], {"decision": "not interested", "session": session["id"]})
                 st.rerun()
             with st.expander("Compare sources and match evidence"):
-                st.write(row.get("match_reason", "No comparable listing found"))
-                st.caption(f"Validated match confidence: {row['match_confidence']} / 100. Candidate title similarity is separate from equivalence.")
-                st.json({"purchase_specifications": a.specs, "retail_specifications": b.specs if b else {},
-                         "purchase_price_basis": a.source_attributes.get("price_basis", "Not reported"),
-                         "shipping": a.shipping, "MOQ": a.moq, "delivery_days": a.delivery_days,
-                         "destination": a.target_country, "stock": a.availability})
+                comparison_panel(a, b, row, summary)
                 if b:
                     review = st.selectbox("Your match decision", ["automatic", "approve", "reject"], key="review_" + key)
                     st.caption("Approval is your judgment; it cannot fill missing prices, shipping, MOQ or currency.")
@@ -93,7 +91,7 @@ def opportunity_cards(store, session, assumptions):
                     st.caption("Scenario fees, advertising, tax, returns and fulfillment are assumptions. A retail asking price does not guarantee a sale.")
                     st.json(row["assumptions"])
                 else:
-                    st.write("Profit is unresolved. Verify the missing evidence before using the financial scenario in Advanced Tools.")
+                    st.write(profit_explanation(row, summary))
     if not visible:
         st.info("No findings in this view. Check source failures, include rejected findings, or run another category scan. No sample products were substituted.")
     if selected and st.button("Deep Research selected candidates", type="primary"):

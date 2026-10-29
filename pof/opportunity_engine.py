@@ -16,7 +16,7 @@ from pof.finance import Assumptions, calculate
 from pof.live.catalog import source_status
 from pof.live.discovery import run_research
 from pof.live.query import ResearchQuery
-from pof.matching import match, normalize, variants
+from pof.matching import match, normalize, variants, title_model_conflict
 from pof.models import now
 from pof.research import pair_id
 from pof.scoring import DEFAULT_WEIGHTS, score
@@ -133,7 +133,8 @@ def build_leads(products, settings, assumptions=None, reviews=None, buy_ids=None
             av, bv = variants(a), variants(b)
             conflict = (any(av[k] != bv[k] for k in av.keys() & bv.keys()) or
                         bool(a.gtin and b.gtin and a.gtin != b.gtin) or
-                        bool(a.model and b.model and normalize(a.model) != normalize(b.model)))
+                        bool(a.model and b.model and normalize(a.model) != normalize(b.model)) or
+                        bool(title_model_conflict(a, b)))
             if decision == "reject" or conflict:
                 reasons.append("Manual rejection" if decision == "reject" else m.reason)
             if not accepted:
