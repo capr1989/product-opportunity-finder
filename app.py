@@ -20,6 +20,8 @@ from pof.models import NUMERIC
 from pof.research import deals, opportunities, search
 from pof.scoring import DEFAULT_WEIGHTS
 from pof.storage import Store
+from pof.ui_discovery import discovery_home
+from pof.ui_review import review_center
 from pof.ui_live import (connect_sources, help_center, navigate, new_research, results_dashboard,
                          setup_wizard, METRIC_HELP)
 
@@ -37,51 +39,66 @@ def initialize(data_directory):
         logger.setLevel(logging.INFO)
     # Do not enable HTTP/Google debug logging: it can expose OAuth metadata.
     logging.getLogger("google.ads.googleads.client").setLevel(logging.CRITICAL)
-    return Store(Path(data_directory) / "research.sqlite3")
+    try:
+        return Store(Path(data_directory) / "research.sqlite3")
+    except Exception:
+        st.error("Research storage could not open or upgrade safely. Stop the app, check folder access and disk space, and keep the pre-upgrade backup. No empty replacement database has been substituted.")
+        st.stop()
 
 
 store = initialize(os.environ.get("POF_DATA_DIR", str(ROOT / "data")))
-PAGES = ["Overview", "Setup", "New Research", "Research Results", "Product Search", "Broad Discovery", "Retail Deal Hunter", "Dropshipping Opportunities",
+PAGES = ["Automatic Discovery", "Guided Research", "Advanced Tools", "Product Review Center", "My Favorites", "Maybe Later", "Settings", "Overview", "Setup", "New Research", "Research Results", "Product Search", "Broad Discovery", "Retail Deal Hunter", "Dropshipping Opportunities",
          "Product Comparison", "Google Ads Keyword Research", "Saved Products", "Research History",
          "Source Manager", "API Settings and Diagnostics", "Export Center", "Help"]
 st.sidebar.title("🔎 Opportunity Finder")
 if "next_workspace" in st.session_state:
     st.session_state["workspace"] = st.session_state.pop("next_workspace")
 if "workspace" not in st.session_state:
-    st.session_state["workspace"] = "Overview" if (store.get_config("settings", "onboarding") or {}).get("complete") else "Setup"
-page = st.sidebar.radio("Workspace", PAGES, key="workspace")
-if st.sidebar.button("Start New Research", type="primary"):
+    st.session_state["workspace"] = "Automatic Discovery"
+if st.sidebar.button("Automatic Discovery"):
+    navigate("Automatic Discovery")
+if st.sidebar.button("Guided Research"):
+    navigate("Guided Research")
+for destination in ("Product Review Center", "My Favorites", "Maybe Later", "Settings"):
+    if st.sidebar.button(destination):
+        navigate(destination)
+with st.sidebar.expander("Advanced Tools", expanded=st.session_state["workspace"] not in {"Automatic Discovery", "Guided Research", "Product Review Center", "My Favorites", "Maybe Later", "Settings"}) as advanced_navigation:
+    page = st.radio("Workspace", PAGES, key="workspace")
+if advanced_navigation.button("Start New Research", type="primary"):
     navigate("New Research")
-if page in {"New Research", "Research Results"}:
+if page in {"Automatic Discovery", "Guided Research", "New Research", "Research Results", "Product Review Center", "My Favorites", "Maybe Later", "Settings"}:
     st.session_state["demo_dataset"] = False
-demo = st.sidebar.toggle("Demo dataset", value=False, key="demo_dataset", disabled=page in {"New Research", "Research Results"},
+demo = advanced_navigation.toggle("Demo dataset", value=False, key="demo_dataset", disabled=page in {"Automatic Discovery", "Guided Research", "New Research", "Research Results", "Product Review Center", "My Favorites", "Maybe Later", "Settings"},
     help="Fictional data stays separate from real research. Live research screens always use real data.")
 if demo:
     st.warning("DEMO MODE · All displayed products and metrics are fictional. No live evidence or sales predictions.")
-    if st.sidebar.button("Load / reset demo snapshots"):
+    if advanced_navigation.button("Load / reset demo snapshots"):
         store.add_run("DEMO fixtures", demo_products())
         st.rerun()
 
-with st.sidebar.expander("Cost assumptions", expanded=False):
-    saved_assumptions = store.get_config("settings", "costs") or asdict(Assumptions())
-    inputs = {}
-    for key, default in saved_assumptions.items():
-        inputs[key] = st.number_input(key.replace("_", " ").title(), min_value=0.0,
-            max_value=1.0 if key.endswith("rate") else 100000.0, value=float(default),
-            step=0.01 if key.endswith("rate") else 0.1, format="%.4f", key=f"cost_{key}",
-            help="User estimate; not a verified provider cost. Rates use fractions (0.15 = 15%).")
-    assumptions = Assumptions(**inputs)
-    st.caption("Rates are fractions: 0.15 = 15%. Shipping in imports is per unit. Taxes are nonrecoverable landed taxes.")
-    if st.button("Save cost defaults"):
-        store.put_config("settings", "costs", inputs)
-        st.success("Saved")
-with st.sidebar.expander("Ranking preferences"):
-    stored_weights = store.get_config("settings", "weights") or DEFAULT_WEIGHTS
-    weights = {key: st.number_input(key.title(), 0, 100, int(value), key=f"weight_{key}")
-               for key, value in stored_weights.items()}
-    st.caption("Preferences affect score; hard filters exclude rows. Missing factors receive zero points.")
-    if st.button("Save ranking defaults"):
-        store.put_config("settings", "weights", weights)
+assumptions = Assumptions(**(store.get_config("settings", "costs") or asdict(Assumptions())))
+weights = store.get_config("settings", "weights") or DEFAULT_WEIGHTS
+if page not in {"Automatic Discovery", "Guided Research", "Product Review Center", "My Favorites", "Maybe Later", "Settings"}:
+    with st.sidebar.expander("Cost assumptions", expanded=False):
+        saved_assumptions = store.get_config("settings", "costs") or asdict(Assumptions())
+        inputs = {}
+        for key, default in saved_assumptions.items():
+            inputs[key] = st.number_input(key.replace("_", " ").title(), min_value=0.0,
+                max_value=1.0 if key.endswith("rate") else 100000.0, value=float(default),
+                step=0.01 if key.endswith("rate") else 0.1, format="%.4f", key=f"cost_{key}",
+                help="User estimate; not a verified provider cost. Rates use fractions (0.15 = 15%).")
+        assumptions = Assumptions(**inputs)
+        st.caption("Rates are fractions: 0.15 = 15%. Shipping in imports is per unit. Taxes are nonrecoverable landed taxes.")
+        if st.button("Save cost defaults"):
+            store.put_config("settings", "costs", inputs)
+            st.success("Saved")
+    with st.sidebar.expander("Ranking preferences"):
+        stored_weights = store.get_config("settings", "weights") or DEFAULT_WEIGHTS
+        weights = {key: st.number_input(key.title(), 0, 100, int(value), key=f"weight_{key}")
+                   for key, value in stored_weights.items()}
+        st.caption("Preferences affect score; hard filters exclude rows. Missing factors receive zero points.")
+        if st.button("Save ranking defaults"):
+            store.put_config("settings", "weights", weights)
 
 sources = store.configs("source")
 products = store.products(demo=demo)
@@ -238,10 +255,27 @@ def opportunity_view(items, dropship=False):
     return rows
 
 
-st.title(page)
-st.caption("Local research workspace · USD economics · Evidence and assumptions stay visible")
+if page not in {"Automatic Discovery", "Guided Research", "Product Review Center", "My Favorites", "Maybe Later", "Settings"}:
+    st.title(page)
+    st.caption("Local research workspace · USD economics · Evidence and assumptions stay visible")
 
-if page == "Overview":
+if page in {"Automatic Discovery", "Guided Research"}:
+    discovery_home(store, guided=page == "Guided Research")
+
+elif page in {"Product Review Center", "My Favorites", "Maybe Later"}:
+    review_center(store, favorites=page == "My Favorites", watchlist=page == "Maybe Later")
+
+elif page == "Settings":
+    from pof.ui_settings import application_settings
+    application_settings(store)
+
+elif page == "Advanced Tools":
+    st.write("Open a tool from the Advanced Tools menu in the sidebar. All existing research, import, matching, history, export and diagnostic features remain available.")
+    for label in PAGES[3:]:
+        if st.button(label, key="advanced_" + label):
+            navigate(label)
+
+elif page == "Overview":
     cols = st.columns(4)
     cols[0].metric("Products", len(products))
     cols[1].metric("Sources", len({p.source for p in products}))

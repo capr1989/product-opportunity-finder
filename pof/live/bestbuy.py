@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from pof.live.errors import SourceError
 from pof.live.query import ResearchQuery
 from pof.models import Product
+from pof.product_evidence import explicit_fields
 from pof.security import SafeHTTP
 
 HOST = "api.bestbuy.com"
@@ -109,8 +110,7 @@ class BestBuyConnector:
             raise ValueError("Missing valid product listing URL")
         image = safe_link(row.get("image"), {"pisces.bbystatic.com", "pisces.bbystatic.com.edgesuite.net", "images.bestbuy.com"})
         p = Product("Best Buy", row["name"], role="retailer", url=url,
-            sku=str(row["sku"]), brand=row.get("manufacturer") or "", model=row.get("modelNumber") or "",
-            gtin=str(row.get("upc") or ""), price=row.get("salePrice"), original_price=row.get("regularPrice"),
+            sku=str(row["sku"]), **explicit_fields(row), price=row.get("salePrice"), original_price=row.get("regularPrice"),
             category=names[0] if names else "", subcategory=names[-1] if len(names) > 1 else "",
             currency="USD", condition=(row.get("condition") or "unknown").lower(), shipping=row.get("shippingCost"), moq=1, availability=availability,
             merchant="Best Buy", supplier_country="US", target_country=market,

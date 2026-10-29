@@ -3,9 +3,9 @@ import csv
 import hashlib
 import io
 import json
-import os
 import time
 
+from pof.credential_vault import integration_credentials
 from pof.models import now
 from pof.storage import Store
 
@@ -14,7 +14,8 @@ REQUIRED = ["GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_REFR
 
 
 def diagnostics() -> dict:
-    missing = [key for key in REQUIRED if not os.environ.get(key)]
+    values = integration_credentials("Google Ads")
+    missing = [key for key in REQUIRED if not values.get(key)]
     return {"credentials_present": not missing, "missing_variables": missing,
         "authentication": "unverified — run a keyword request" if not missing else "requires credentials",
         "project_authorization": "unverified — controlled by OAuth credentials' Cloud project",
@@ -28,14 +29,15 @@ def google_client():
 
     if not diagnostics()["credentials_present"]:
         raise ValueError("Missing environment credentials; see Diagnostics")
-    credentials = Credentials(token=None, refresh_token=os.environ["GOOGLE_ADS_REFRESH_TOKEN"],
-        token_uri="https://oauth2.googleapis.com/token", client_id=os.environ["GOOGLE_ADS_CLIENT_ID"],
-        client_secret=os.environ["GOOGLE_ADS_CLIENT_SECRET"],
+    values = integration_credentials("Google Ads")
+    credentials = Credentials(token=None, refresh_token=values["GOOGLE_ADS_REFRESH_TOKEN"],
+        token_uri="https://oauth2.googleapis.com/token", client_id=values["GOOGLE_ADS_CLIENT_ID"],
+        client_secret=values["GOOGLE_ADS_CLIENT_SECRET"],
         scopes=["https://www.googleapis.com/auth/adwords"])
     # Direct construction avoids older load_from_dict validation requiring a developer token.
     return GoogleAdsClient(credentials=credentials,
-        developer_token=os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN") or None,
-        login_customer_id=os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID") or None,
+        developer_token=values.get("GOOGLE_ADS_DEVELOPER_TOKEN") or None,
+        login_customer_id=values.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID") or None,
         use_proto_plus=True)
 
 
@@ -47,11 +49,12 @@ def keyword_ideas(store: Store, keywords: list[str], country: str = "2840", lang
         raise ValueError("Provide 1–20 keywords of at most 200 characters")
     if not country.isdigit() or not language.isdigit():
         raise ValueError("Country/language must be Google criterion IDs")
-    customer = os.environ.get("GOOGLE_ADS_CUSTOMER_ID", "")
+    values = integration_credentials("Google Ads")
+    customer = values.get("GOOGLE_ADS_CUSTOMER_ID", "")
     if not customer.isdigit() or len(customer) != 10:
         raise ValueError("Customer ID must have 10 digits, no dashes")
     key = "ads:" + hashlib.sha256(json.dumps([keywords, country, language, customer,
-        os.environ.get("GOOGLE_ADS_CLIENT_ID", "")]).encode()).hexdigest()
+        values.get("GOOGLE_ADS_CLIENT_ID", "")]).encode()).hexdigest()
     with store.connect() as db:
         cached = db.execute("SELECT payload,created FROM cache WHERE key=?", (key,)).fetchone()
         if cached and time.time() - cached[1] < cache_seconds:

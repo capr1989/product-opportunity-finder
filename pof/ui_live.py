@@ -1,6 +1,5 @@
 """Reusable guided live-research screens. Advanced data stays behind expanders."""
 from dataclasses import asdict
-import os
 import time
 
 import pandas as pd
@@ -12,6 +11,7 @@ from pof.live.catalog import POLICIES, source_status
 from pof.live.discovery import run_research
 from pof.live.query import ResearchQuery
 from pof.research import opportunities
+from pof.credential_vault import integration_credentials
 
 MARKETS = {"USA": "US", "Panama": "PA", "USA and Panama": "US+PA"}
 CATEGORIES = {"All categories": "", "Computers and tablets": "abcat0500000", "Headphones": "abcat0204000",
@@ -31,7 +31,7 @@ def navigate(page):
 
 def credentials():
     # Secrets live only in this browser session or the process environment; never in SQLite.
-    values = {"BESTBUY_API_KEY": os.environ.get("BESTBUY_API_KEY", "")}
+    values = integration_credentials("Best Buy")
     values.update(st.session_state.get("source_credentials", {}))
     return values
 
@@ -94,10 +94,11 @@ def connect_sources(store):
             st.caption("Project Chromium installation detected.")
         else:
             st.info("For key-free browser collection, double-click InstallBrowser.cmd in the project folder once. It installs Playwright's official Chromium locally.")
-        options = ["Public browser — no API key", "Official API — optional key"]
+        options = ["Public browser — no API key", "Official API — optional key", "Automatic", "Browser first", "API first"]
+        modes = ["browser", "api", "auto", "browser-first", "api-first"]
         current_mode = config.get("bestbuy_method", "api" if credentials()["BESTBUY_API_KEY"] else "browser")
-        mode = st.radio("Best Buy collection method", options, index=1 if current_mode == "api" else 0)
-        chosen_mode = "api" if mode == options[1] else "browser"
+        mode = st.radio("Best Buy collection method", options, index=modes.index(current_mode) if current_mode in modes else 0)
+        chosen_mode = modes[options.index(mode)]
         if chosen_mode != current_mode:
             store.put_config("source", name, {**config, "bestbuy_method": chosen_mode})
         st.caption("Browser mode needs no key and stops at access barriers. The official API is optional.")

@@ -34,6 +34,8 @@ class Store:
             if "expires_at" not in columns:
                 db.execute("ALTER TABLE snapshots ADD COLUMN expires_at TEXT")
             db.execute("INSERT OR IGNORE INTO migrations VALUES(2,?)", (now(),))
+        from pof.review_store import migrate
+        migrate(self)
         for index, name in enumerate(SOURCES):
             if self.get_config("source", name) is None:
                 self.put_config("source", name, {"name": name, "role": "supplier" if index < 3 else "retailer",
@@ -72,15 +74,26 @@ class Store:
                 if p.collection_method == "bestbuy_api":
                     retention = min(retention or 72, 72)
                 expires = (datetime.fromisoformat(p.collected_at) + timedelta(hours=retention)).isoformat() if retention else None
-                db.execute("INSERT INTO snapshots(run_id,identity,payload,created,expires_at) VALUES(?,?,?,?,?)",
-                           (run_id, self.identity(p), json.dumps(p.record()), now(), expires))
+                snapshot_id = db.execute("INSERT INTO snapshots(run_id,identity,payload,created,expires_at) VALUES(?,?,?,?,?)",
+                           (run_id, self.identity(p), json.dumps(p.record()), now(), expires)).lastrowid
+                from pof.review_store import associate
+                associate(db, snapshot_id, run_id, self.identity(p), p)
         return run_id
 
     def purge_expired(self):
         """Remove licensed content after its retention deadline, including historical payloads."""
         with self.connect() as db:
+            expired = {r[0] for r in db.execute(
+                "SELECT identity FROM snapshots WHERE expires_at IS NOT NULL AND julianday(expires_at)<=julianday(?)", (now(),))}
             removed = db.execute("DELETE FROM snapshots WHERE expires_at IS NOT NULL AND julianday(expires_at)<=julianday(?)", (now(),)).rowcount
             removed += db.execute("DELETE FROM cache WHERE key LIKE 'bestbuy-live:%' AND created<?", (time.time() - 72 * 3600,)).rowcount
+            if expired:
+                for name, payload in db.execute("SELECT name,payload FROM config WHERE kind='discovery_session'").fetchall():
+                    session = json.loads(payload)
+                    session["leads"] = [r for r in session.get("leads", [])
+                                        if r.get("buy_id") not in expired and r.get("sell_id") not in expired]
+                    db.execute("UPDATE config SET payload=? WHERE kind='discovery_session' AND name=?",
+                               (json.dumps(session), name))
         if removed:
             with self.connect() as db:
                 db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -100,6 +113,13 @@ class Store:
         with self.connect() as db:
             return db.execute("SELECT r.id,r.name,r.created,COUNT(s.id) FROM runs r LEFT JOIN snapshots s "
                               "ON s.run_id=r.id GROUP BY r.id ORDER BY r.id DESC").fetchall()
+
+    def backup_bytes(self):
+        """Consistent standalone SQLite download, including committed WAL data."""
+        with self.connect() as source, sqlite3.connect(":memory:") as target:
+            source.backup(target)
+            target.execute("PRAGMA journal_mode=MEMORY")
+            return target.serialize()
 
     def price_history(self, p: Product):
         with self.connect() as db:

@@ -3,6 +3,7 @@ from html.parser import HTMLParser
 import json
 
 from pof.models import Product
+from pof.product_evidence import explicit_fields
 
 
 class StructuredData(HTMLParser):
@@ -57,7 +58,9 @@ def parse_products(html: bytes, source: dict) -> list[Product]:
             "availability": str(offer.get("availability", "unknown")).split("/")[-1],
             "rating": rating.get("ratingValue"), "reviews": rating.get("reviewCount")}
         values["availability"] = {"InStock": "in_stock", "OutOfStock": "out_of_stock", "PreOrder": "preorder"}.get(values["availability"], values["availability"])
+        values.update(explicit_fields(item))
         values["states"] = {k: "verified" for k, v in values.items() if v is not None and v != ""}
+        values["states"]["specs"] = "verified" if values["specs"] else "unavailable"
         output.append(Product(**values))
     if not output:
         raise ValueError("No supported Product JSON-LD. Use an authorized feed or CSV import")

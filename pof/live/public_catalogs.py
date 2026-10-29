@@ -8,6 +8,7 @@ from pof.browser import LOCK, browser_env
 from pof.live.bestbuy_browser import configure_browser_path, money
 from pof.live.errors import SourceError
 from pof.models import Product
+from pof.product_evidence import catalog_labels, explicit_fields
 from pof.security import MAX_RESPONSE, SafeHTTP
 
 
@@ -40,12 +41,15 @@ def static_dom(raw):
 def amazon_url(query, page):
     categories = {"abcat0500000": "computers", "abcat0204000": "electronics", "abcat0101000": "electronics",
                   "abcat0800000": "mobile", "abcat0900000": "appliances"}
-    terms = " ".join(v for v in (query.keywords, query.category_name, query.brand, query.model) if v)
+    terms = " ".join(v for v in (query.keywords or query.category_name, query.brand, query.model) if v)
     if not terms:
         terms = {"abcat0500000": "computer accessories", "abcat0204000": "headphones",
                  "abcat0101000": "televisions", "abcat0800000": "cell phones",
                  "abcat0900000": "home appliances"}.get(query.category_id, "electronics accessories")
-    return "https://www.amazon.com/s?" + urlencode({"k": terms, "i": categories.get(query.category_id, "electronics"), "page": page})
+    catalog = {"Computer accessories": "computers", "Phone accessories": "mobile",
+               "Audio": "electronics", "Home organization": "garden", "Kitchen tools": "kitchen",
+               "Fitness accessories": "sporting"}.get(query.category_name, categories.get(query.category_id, "electronics"))
+    return "https://www.amazon.com/s?" + urlencode({"k": terms, "i": catalog, "page": page})
 
 
 class AmazonPublicConnector:
@@ -76,7 +80,13 @@ class AmazonPublicConnector:
                     image_url = image.first.get_attribute("src") if image.count() else ""
                     if not image_url or not image_url.startswith("https://"):
                         image_url = ""
+                    attributes = catalog_labels(card.inner_text(timeout=2000))
+                    for attribute in ("brand", "model"):
+                        labeled = card.get_attribute("data-" + attribute)
+                        if labeled:
+                            attributes[attribute] = labeled[:400]
                     p = Product("Amazon US", title, role="retailer", sku=asin, url=f"https://www.amazon.com/dp/{asin}",
+                        **attributes,
                         price=listed_price, original_price=original, currency="USD", condition="unknown", moq=1,
                         target_country=query.target_market, image_url=image_url, image_reuse_permitted=False,
                         collection_method="amazon_public", source_attributes={"asin": asin,
@@ -85,6 +95,7 @@ class AmazonPublicConnector:
                             "delivery_to_target": "unverified", "broad_default": "Electronics catalog"})
                     p.states = {"title": "verified", "sku": "verified", "price": "verified" if listed_price is not None else "unavailable",
                         "original_price": "verified" if original is not None else "unavailable", "url": "verified", "moq": "estimated"}
+                    p.states.update({k: "verified" if getattr(p, k) else "unavailable" for k in ("brand", "model", "gtin", "specs")})
                     products.append(p)
                     seen.add(asin)
                     if len(products) >= query.limit:
@@ -128,7 +139,7 @@ def aliexpress_records(script, market, limit):
                 image = "https:" + image
             if image and not image.startswith("https://"):
                 image = ""
-            p = Product("AliExpress", title, role="supplier", sku=identifier,
+            p = Product("AliExpress", title, role="supplier", sku=identifier, **explicit_fields(value),
                 url=f"https://www.aliexpress.com/item/{identifier}.html", price=price.get("minPrice"),
                 currency=price.get("currencyCode") or "UNKNOWN", condition="unknown", target_country=market,
                 image_url=image, image_reuse_permitted=False, collection_method="aliexpress_public",
@@ -139,6 +150,7 @@ def aliexpress_records(script, market, limit):
                     "variant_confirmation_required": True, "delivery_to_target": "unverified"})
             p.states = {"title": "verified", "sku": "verified", "price": "verified" if p.price is not None else "unavailable",
                         "currency": "verified" if p.currency != "UNKNOWN" else "unavailable", "url": "verified"}
+            p.states.update({k: "verified" if getattr(p, k) else "unavailable" for k in ("brand", "model", "gtin", "specs")})
             products.append(p)
             seen.add(identifier)
     return products
@@ -151,7 +163,7 @@ class AliExpressPublicConnector:
     def discover(self, query):
         hints = {"abcat0500000": "computer accessories", "abcat0204000": "headphones", "abcat0101000": "tv accessories",
                  "abcat0800000": "phone accessories", "abcat0900000": "home appliances"}
-        terms = " ".join(v for v in (query.keywords, query.category_name, query.brand, query.model) if v) or hints.get(query.category_id, "electronics accessories")
+        terms = " ".join(v for v in (query.keywords or query.category_name, query.brand, query.model) if v) or hints.get(query.category_id, "electronics accessories")
         url = "https://www.aliexpress.com/w/wholesale-" + quote(terms.replace(" ", "-"), safe="-") + ".html"
         raw = self.http.fetch(url, "www.aliexpress.com", ("text/html", "application/xhtml+xml"))
         with static_dom(raw) as page:
