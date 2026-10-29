@@ -34,6 +34,8 @@ class Store:
             if "expires_at" not in columns:
                 db.execute("ALTER TABLE snapshots ADD COLUMN expires_at TEXT")
             db.execute("INSERT OR IGNORE INTO migrations VALUES(2,?)", (now(),))
+        from pof.review_store import migrate
+        migrate(self)
         for index, name in enumerate(SOURCES):
             if self.get_config("source", name) is None:
                 self.put_config("source", name, {"name": name, "role": "supplier" if index < 3 else "retailer",
@@ -72,8 +74,10 @@ class Store:
                 if p.collection_method == "bestbuy_api":
                     retention = min(retention or 72, 72)
                 expires = (datetime.fromisoformat(p.collected_at) + timedelta(hours=retention)).isoformat() if retention else None
-                db.execute("INSERT INTO snapshots(run_id,identity,payload,created,expires_at) VALUES(?,?,?,?,?)",
-                           (run_id, self.identity(p), json.dumps(p.record()), now(), expires))
+                snapshot_id = db.execute("INSERT INTO snapshots(run_id,identity,payload,created,expires_at) VALUES(?,?,?,?,?)",
+                           (run_id, self.identity(p), json.dumps(p.record()), now(), expires)).lastrowid
+                from pof.review_store import associate
+                associate(db, snapshot_id, run_id, self.identity(p), p)
         return run_id
 
     def purge_expired(self):
