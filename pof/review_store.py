@@ -56,7 +56,7 @@ def migrate(store):
         db.execute("BEGIN IMMEDIATE")
         for statement in statements:
             db.execute(statement)
-        for sid, rid, identity, payload in db.execute("SELECT id,run_id,identity,payload FROM snapshots").fetchall():
+        for sid, rid, identity, payload in db.execute("SELECT id,run_id,identity,payload FROM snapshots"):
             associate(db, sid, rid, identity, Product(**json.loads(payload)))
         db.execute("INSERT INTO migrations VALUES(3,?)", (now(),))
 
@@ -88,10 +88,11 @@ class ReviewStore:
             if run_ids:
                 where = " WHERE s.run_id IN (" + ",".join("?" for _ in run_ids) + ")"
                 args = list(run_ids)
-            rows = db.execute("SELECT c.id,s.id,s.run_id,s.payload,COALESCE(r.rating,'Unrated'),COALESCE(n.note,'') "
-                "FROM candidates c JOIN listings l ON l.candidate_id=c.id JOIN observations o ON o.listing_id=l.id "
-                "JOIN snapshots s ON s.id=o.snapshot_id LEFT JOIN product_ratings r ON r.candidate_id=c.id "
-                "LEFT JOIN product_notes n ON n.candidate_id=c.id" + where + " ORDER BY s.id DESC", args).fetchall()
+            rows = db.execute("WITH latest AS (SELECT l.candidate_id,MAX(s.id) AS snapshot_id FROM listings l "
+                "JOIN observations o ON o.listing_id=l.id JOIN snapshots s ON s.id=o.snapshot_id" + where +
+                " GROUP BY l.candidate_id) SELECT latest.candidate_id,s.id,s.run_id,s.payload,COALESCE(r.rating,'Unrated'),COALESCE(n.note,'') "
+                "FROM latest JOIN snapshots s ON s.id=latest.snapshot_id LEFT JOIN product_ratings r ON r.candidate_id=latest.candidate_id "
+                "LEFT JOIN product_notes n ON n.candidate_id=latest.candidate_id ORDER BY s.id DESC", args).fetchall()
         result = {}
         for cid, sid, rid, payload, rating, note in rows:
             if cid in result or (favorites and rating not in {"Love it", "Like"}) or (watchlist and rating != "Maybe later"):
@@ -107,3 +108,12 @@ class ReviewStore:
             rows = db.execute("SELECT s.run_id,s.payload FROM observations o JOIN listings l ON l.id=o.listing_id JOIN snapshots s ON s.id=o.snapshot_id WHERE l.candidate_id=? ORDER BY s.id", (cid,)).fetchall()
         return [{"scan": rid, "collected_at": p["collected_at"], "price": p["price"],
                  "shipping": p["shipping"], "currency": p["currency"]} for rid, payload in rows for p in [json.loads(payload)]]
+
+    def unavailable_preferences(self, favorites=False, watchlist=False):
+        with self.store.connect() as db:
+            rows = db.execute("SELECT r.candidate_id,r.rating,COALESCE(n.note,'') FROM product_ratings r "
+                "LEFT JOIN product_notes n ON n.candidate_id=r.candidate_id WHERE NOT EXISTS "
+                "(SELECT 1 FROM listings l JOIN observations o ON o.listing_id=l.id WHERE l.candidate_id=r.candidate_id)").fetchall()
+        return [{"Candidate reference": cid[:16], "Personal rating": rating, "Personal notes": note}
+                for cid, rating, note in rows if (not favorites or rating in {"Love it", "Like"})
+                and (not watchlist or rating == "Maybe later")]

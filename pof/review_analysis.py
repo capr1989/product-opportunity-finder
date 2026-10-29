@@ -17,11 +17,12 @@ def monthly_scenario(selling_price, contribution, units):
             "monthly_contribution": contribution * units if contribution is not None else None}
 
 
-def evidence(items, store, assumptions):
+def evidence(items, store, assumptions, context=None):
     universe = {Store.identity(p): p for p in store.products(demo=False)}
     result = {}
     keyword_rows = (store.get_config("keywords", "latest") or {}).get("rows", [])
     mappings = store.configs("keyword_map")
+    sessions = sorted(store.configs("discovery_session").values(), key=lambda s: s["created"], reverse=True)
     for item in items:
         p = item["product"]
         mapping = mappings.get(Store.identity(p), {})
@@ -33,7 +34,9 @@ def evidence(items, store, assumptions):
         quotes = [q for q in universe.values() if q.source != p.source and q.role == "retailer"]
         quotes.sort(key=lambda q: token_set_ratio(normalize(p.title), normalize(q.title)), reverse=True)
         # Investigate the exact selected snapshot, including its selected variant.
-        leads = build_leads([p, *quotes[:30]], DiscoverySettings(), assumptions, store.reviews(), {Store.identity(p)})
+        session = next((s for s in sessions if item["run_id"] in s["run_ids"]), None)
+        settings = context or (DiscoverySettings(**session["settings"]) if session else DiscoverySettings())
+        leads = build_leads([p, *quotes[:30]], settings, assumptions, store.reviews(), {Store.identity(p)})
         comparisons = [r for r in leads if r["buy_id"] == Store.identity(p) and r.get("sell_id")]
         best = next((r for r in comparisons if r["financial"].get("known")), comparisons[0] if comparisons else None)
         result[item["id"]] = {"comparisons": comparisons, "best": best,

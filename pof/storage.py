@@ -114,6 +114,13 @@ class Store:
             return db.execute("SELECT r.id,r.name,r.created,COUNT(s.id) FROM runs r LEFT JOIN snapshots s "
                               "ON s.run_id=r.id GROUP BY r.id ORDER BY r.id DESC").fetchall()
 
+    def backup_bytes(self):
+        """Consistent standalone SQLite download, including committed WAL data."""
+        with self.connect() as source, sqlite3.connect(":memory:") as target:
+            source.backup(target)
+            target.execute("PRAGMA journal_mode=MEMORY")
+            return target.serialize()
+
     def price_history(self, p: Product):
         with self.connect() as db:
             rows = db.execute("SELECT run_id,payload,created FROM snapshots WHERE identity=? ORDER BY id",

@@ -1,7 +1,6 @@
 """Central settings and credential configuration with provider-scoped tests."""
 from dataclasses import asdict
 import platform
-import sqlite3
 import sys
 
 import pandas as pd
@@ -33,6 +32,8 @@ def test_integration(store, provider):
             products = BestBuyConnector(values["BESTBUY_API_KEY"]).discover(ResearchQuery(keywords="usb hub", limit=1, max_pages=1))
             if products:
                 store.add_run("Best Buy API connection test", products)
+                from pof.live.catalog import record_attempt
+                record_attempt(store, "Best Buy", count=len(products), live=True, method="bestbuy_api")
             count = len(products)
         else:
             rows, _ = keyword_ideas(store, ["usb hub"])
@@ -199,8 +200,6 @@ def application_settings(store):
             if store.path.stat().st_size > 200_000_000:
                 st.warning("For a database this large, stop the app and copy the data directory using Windows.")
             else:
-                with store.connect() as db, sqlite3.connect(":memory:") as destination:
-                    db.backup(destination)
-                    backup = destination.serialize()
+                backup = store.backup_bytes()
                 st.download_button("Download research database backup", backup, "research-backup.sqlite3", "application/octet-stream")
                 st.caption("Keep backups private. They include research, personal ratings and notes, but no Windows vault credentials. Restore only with the application stopped; keep the current database until validation succeeds.")

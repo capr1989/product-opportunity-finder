@@ -36,7 +36,7 @@ def opportunity_cards(store, session, assumptions):
         with st.container(border=True):
             st.subheader(a.title)
             st.write(row["state"])
-            if a.image_url and a.image_reuse_permitted:
+            if a.image_url and a.image_reuse_permitted and (store.get_config("settings", "application") or {}).get("show_images", False):
                 st.image(a.image_url, width=160)
             cols = st.columns(3)
             cols[0].metric("Observed purchase quote", f"{a.currency} {a.price:,.2f}" if a.price is not None else "Unknown")
@@ -114,12 +114,18 @@ def opportunity_cards(store, session, assumptions):
 
 
 def discovery_home(store, *, guided=False):
+    from pof.settings import get_settings
+    defaults = get_settings(store)
     st.title("Find Products Worth Selling")
     st.write("Explore real catalogs, compare possible sourcing options, and see what still needs checking.")
     if "next_discovery_mode" in st.session_state:
         st.session_state["discovery_mode"] = st.session_state.pop("next_discovery_mode")
+    if "discovery_mode" not in st.session_state:
+        st.session_state["discovery_mode"] = defaults["default_mode"]
     mode = st.radio("Research depth", ["Quick Scan", "Deep Research"], horizontal=True, key="discovery_mode")
     st.caption("Quick Scan explores several categories. Deep Research searches for comparable offers and checks the evidence for selected products.")
+    if store.history() and st.button("Review collected products"):
+        navigate("Product Review Center")
     if not guided:
         cols = st.columns(2)
         if cols[0].button("Guided Research"):
@@ -128,20 +134,22 @@ def discovery_home(store, *, guided=False):
             navigate("Advanced Tools")
     model, market, budget, desired, categories, delivery = "Explore All", "US", 500.0, 5.0, [], None
     with st.expander("Your selling plans" if guided else "Optional preferences", expanded=guided):
-        model = st.selectbox("Business model", ["Explore All", "Dropshipping", "Retail Reselling", "Wholesale"])
-        market = st.selectbox("Selling market", ["US", "PA", "US+PA"], format_func=lambda x: {"US": "USA", "PA": "Panama", "US+PA": "Both"}[x])
-        budget = st.number_input("Available investment (USD)", 0.0, 1_000_000.0, 500.0)
-        desired = st.number_input("Desired contribution per unit (USD)", 0.0, 1_000_000.0, 5.0)
-        categories = st.multiselect("Categories of interest", list(TAXONOMY))
+        models = ["Explore All", "Dropshipping", "Retail Reselling", "Wholesale"]
+        model = st.selectbox("Business model", models, index=models.index(defaults["business_model"]))
+        market = st.selectbox("Selling market", ["US", "PA", "US+PA"], index=["US", "PA", "US+PA"].index(defaults["market"]), format_func=lambda x: {"US": "USA", "PA": "Panama", "US+PA": "Both"}[x])
+        budget = st.number_input("Available investment (USD)", 0.0, 1_000_000.0, float(defaults["budget"]))
+        desired = st.number_input("Desired contribution per unit (USD)", 0.0, 1_000_000.0, float(defaults["minimum_profit"]))
+        allowed = [c for c in TAXONOMY if c not in defaults["excluded_categories"]]
+        categories = st.multiselect("Categories of interest", allowed, default=[c for c in defaults["categories"] if c in allowed])
         days = st.number_input("Preferred maximum delivery days (0 = no preference)", 0, 365, 0)
         delivery = days or None
     with st.expander("Scan limits"):
-        query_limit = st.slider("Searches across categories / follow-up candidates", 1, 12, 3 if mode == "Quick Scan" else 6)
-        source_limit = st.slider("Maximum sources per search", 1, 5, 3)
-        product_limit = st.slider("Products per source per search", 1, 20, 8)
+        query_limit = st.slider("Searches across categories / follow-up candidates", 1, 12, defaults["quick_queries"] if mode == "Quick Scan" else defaults["deep_queries"])
+        source_limit = st.slider("Maximum sources per search", 1, 5, defaults["source_limit"])
+        product_limit = st.slider("Products per source per search", 1, 20, defaults["products_per_source"])
         st.caption("Collection stops at these limits. Use Streamlit's Stop control to interrupt; completed collection steps are saved and can be resumed.")
-    settings = DiscoverySettings(mode, model, market, budget, desired, tuple(categories),
-                                 query_limit, source_limit, product_limit, delivery)
+    settings = DiscoverySettings(mode, model, market, budget, desired, tuple(categories or allowed),
+                                 query_limit, source_limit, product_limit, delivery, defaults["minimum_margin"])
     names = available_sources(store, credentials(), settings)
     st.caption("Automatically selected: " + (", ".join(names) or "No available live sources. Review Source Manager."))
     st.caption(f"At most {query_limit * len(names)} source requests; {query_limit * len(names) * product_limit} product observations before deduplication. Each adapter also has its own request limits.")

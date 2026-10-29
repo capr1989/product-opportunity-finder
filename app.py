@@ -21,6 +21,7 @@ from pof.research import deals, opportunities, search
 from pof.scoring import DEFAULT_WEIGHTS
 from pof.storage import Store
 from pof.ui_discovery import discovery_home
+from pof.ui_review import review_center
 from pof.ui_live import (connect_sources, help_center, navigate, new_research, results_dashboard,
                          setup_wizard, METRIC_HELP)
 
@@ -38,11 +39,15 @@ def initialize(data_directory):
         logger.setLevel(logging.INFO)
     # Do not enable HTTP/Google debug logging: it can expose OAuth metadata.
     logging.getLogger("google.ads.googleads.client").setLevel(logging.CRITICAL)
-    return Store(Path(data_directory) / "research.sqlite3")
+    try:
+        return Store(Path(data_directory) / "research.sqlite3")
+    except Exception:
+        st.error("Research storage could not open or upgrade safely. Stop the app, check folder access and disk space, and keep the pre-upgrade backup. No empty replacement database has been substituted.")
+        st.stop()
 
 
 store = initialize(os.environ.get("POF_DATA_DIR", str(ROOT / "data")))
-PAGES = ["Automatic Discovery", "Guided Research", "Advanced Tools", "Overview", "Setup", "New Research", "Research Results", "Product Search", "Broad Discovery", "Retail Deal Hunter", "Dropshipping Opportunities",
+PAGES = ["Automatic Discovery", "Guided Research", "Advanced Tools", "Product Review Center", "My Favorites", "Maybe Later", "Settings", "Overview", "Setup", "New Research", "Research Results", "Product Search", "Broad Discovery", "Retail Deal Hunter", "Dropshipping Opportunities",
          "Product Comparison", "Google Ads Keyword Research", "Saved Products", "Research History",
          "Source Manager", "API Settings and Diagnostics", "Export Center", "Help"]
 st.sidebar.title("🔎 Opportunity Finder")
@@ -54,13 +59,16 @@ if st.sidebar.button("Automatic Discovery"):
     navigate("Automatic Discovery")
 if st.sidebar.button("Guided Research"):
     navigate("Guided Research")
-with st.sidebar.expander("Advanced Tools", expanded=st.session_state["workspace"] not in {"Automatic Discovery", "Guided Research"}) as advanced_navigation:
+for destination in ("Product Review Center", "My Favorites", "Maybe Later", "Settings"):
+    if st.sidebar.button(destination):
+        navigate(destination)
+with st.sidebar.expander("Advanced Tools", expanded=st.session_state["workspace"] not in {"Automatic Discovery", "Guided Research", "Product Review Center", "My Favorites", "Maybe Later", "Settings"}) as advanced_navigation:
     page = st.radio("Workspace", PAGES, key="workspace")
 if advanced_navigation.button("Start New Research", type="primary"):
     navigate("New Research")
-if page in {"Automatic Discovery", "Guided Research", "New Research", "Research Results"}:
+if page in {"Automatic Discovery", "Guided Research", "New Research", "Research Results", "Product Review Center", "My Favorites", "Maybe Later", "Settings"}:
     st.session_state["demo_dataset"] = False
-demo = advanced_navigation.toggle("Demo dataset", value=False, key="demo_dataset", disabled=page in {"Automatic Discovery", "Guided Research", "New Research", "Research Results"},
+demo = advanced_navigation.toggle("Demo dataset", value=False, key="demo_dataset", disabled=page in {"Automatic Discovery", "Guided Research", "New Research", "Research Results", "Product Review Center", "My Favorites", "Maybe Later", "Settings"},
     help="Fictional data stays separate from real research. Live research screens always use real data.")
 if demo:
     st.warning("DEMO MODE · All displayed products and metrics are fictional. No live evidence or sales predictions.")
@@ -70,7 +78,7 @@ if demo:
 
 assumptions = Assumptions(**(store.get_config("settings", "costs") or asdict(Assumptions())))
 weights = store.get_config("settings", "weights") or DEFAULT_WEIGHTS
-if page not in {"Automatic Discovery", "Guided Research"}:
+if page not in {"Automatic Discovery", "Guided Research", "Product Review Center", "My Favorites", "Maybe Later", "Settings"}:
     with st.sidebar.expander("Cost assumptions", expanded=False):
         saved_assumptions = store.get_config("settings", "costs") or asdict(Assumptions())
         inputs = {}
@@ -247,12 +255,19 @@ def opportunity_view(items, dropship=False):
     return rows
 
 
-if page not in {"Automatic Discovery", "Guided Research"}:
+if page not in {"Automatic Discovery", "Guided Research", "Product Review Center", "My Favorites", "Maybe Later", "Settings"}:
     st.title(page)
     st.caption("Local research workspace · USD economics · Evidence and assumptions stay visible")
 
 if page in {"Automatic Discovery", "Guided Research"}:
     discovery_home(store, guided=page == "Guided Research")
+
+elif page in {"Product Review Center", "My Favorites", "Maybe Later"}:
+    review_center(store, favorites=page == "My Favorites", watchlist=page == "Maybe Later")
+
+elif page == "Settings":
+    from pof.ui_settings import application_settings
+    application_settings(store)
 
 elif page == "Advanced Tools":
     st.write("Open a tool from the Advanced Tools menu in the sidebar. All existing research, import, matching, history, export and diagnostic features remain available.")

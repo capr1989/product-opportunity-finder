@@ -16,9 +16,11 @@ HEADERS = ("Title", "URL handle", "Description", "Vendor", "Type", "Tags", "Publ
            "Product image URL", "Image alt text")
 
 
-def shopify_export(items, prices, *, exclude_incomplete=True, status="draft"):
+def shopify_export(items, prices, *, exclude_incomplete=True, status="draft", store_currency="USD"):
     if status not in {"draft", "active"}:
         raise ValueError("Unsupported export status")
+    if store_currency not in {"USD", "PAB"}:
+        raise ValueError("Unsupported store currency; no currency conversion is performed")
     rows, reports = [], []
     for item in items:
         p, cid = item["product"], item["id"]
@@ -63,7 +65,7 @@ def shopify_export(items, prices, *, exclude_incomplete=True, status="draft"):
             row.setdefault(f"Option{index} name", "")
             row.setdefault(f"Option{index} value", "")
         # Currency is not a per-row Shopify CSV field. Never convert supplier costs.
-        if p.price is not None and p.currency == "USD" and p.state("price") == "verified" and p.source_attributes.get("price_basis") != "advertised_minimum":
+        if p.price is not None and p.currency == store_currency and p.state("price") == "verified" and p.source_attributes.get("price_basis") != "advertised_minimum":
             row["Cost per item"] = f"{p.price:.2f}"
         sanitized = {k: spreadsheet_safe(v) for k, v in row.items()}
         changed = [k for k in row if sanitized[k] != row[k]]

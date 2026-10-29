@@ -52,26 +52,37 @@ def source_status(name, config, state, has_key=False):
     policy = POLICIES.get(name, {})
     configured = config.get("kind") in {"json", "csv", "public_page", "browser", "browser_catalog"}
     browser_mode = name == "Best Buy" and bestbuy_browser_mode(config, has_key)
-    method = "Live Scraping" if browser_mode else "Live API" if name == "Best Buy" and has_key else policy.get("method", "Import Only")
+    method = "Live Scraping" if browser_mode else "Live API" if name == "Best Buy" else policy.get("method", "Import Only")
     ready = (name == "Best Buy" and (browser_mode or has_key)) or name in {"Amazon US", "AliExpress"}
     if state.get("error_code") in {"access_denied", "access_barrier", "credentials_rejected"}:
         method = "Restricted"
     if configured and config.get("permission_confirmed") and (config.get("url") or config.get("search_url_template")):
         method = "Live Scraping" if config["kind"] in {"browser", "public_page", "browser_catalog"} else "Live Feed"
         ready = True
+    verified = state.get("verified_live", False)
+    last_success = state.get("last_success", "Never")
+    if name == "Best Buy" and not browser_mode and not configured:
+        # A successful browser collection does not authenticate the API route.
+        api_proof = state.get("verified_methods", {}).get("bestbuy_api", {})
+        verified = bool(api_proof)
+        last_success = api_proof.get("last_success", "Never")
     return {"Source": name, "Collection method": method, "Connector available": bool(ready or policy.get("implemented")),
         "Credentials": "Not required (browser mode)" if browser_mode or name in {"Amazon US", "AliExpress"} else "Required for optional API" if name == "Best Buy" and not has_key else "Configured" if has_key else "Not requested",
-        "Verification": "Actual products retrieved" if state.get("verified_live") else "Not live-verified",
-        "Last successful collection": state.get("last_success", "Never"),
+        "Verification": "Actual products retrieved" if verified else "Not live-verified",
+        "Last successful collection": last_success,
         "Last error": state.get("last_error", ""), "Products last found": state.get("last_count", 0),
         "Enabled": config.get("enabled", True), "ready": ready and config.get("enabled", True)}
 
 
-def record_attempt(store, name, *, count=0, error="", code="", live=False):
+def record_attempt(store, name, *, count=0, error="", code="", live=False, method=None):
     previous = store.get_config("collection_state", name) or {}
     state = {**previous, "last_attempt": now(), "last_count": count, "last_error": error, "error_code": code}
     if not error and live and count:
         state.update(last_success=now(), verified_live=True)
+        if method:
+            methods = state.get("verified_methods", {}).copy()
+            methods[method] = {"last_success": now(), "count": count}
+            state["verified_methods"] = methods
     elif not error:
         state["last_note"] = "Request completed; no products matched" if not count else "Results from cache"
     store.put_config("collection_state", name, state)

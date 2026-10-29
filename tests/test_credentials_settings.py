@@ -52,3 +52,6 @@ def test_bestbuy_preference_does_not_require_key_for_browser():
     assert row["Collection method"] == "Live Scraping"
     row = source_status("Best Buy", {"bestbuy_method": "api-first", "enabled": True}, {}, True)
     assert row["Collection method"] == "Live API"
+    row = source_status("Best Buy", {"bestbuy_method": "api", "enabled": True}, {"verified_live": True}, True)
+    assert row["Verification"] == "Not live-verified"
+    assert row["Last successful collection"] == "Never"

@@ -74,8 +74,10 @@ def run_research(query: ResearchQuery, names: list[str], store, credentials: dic
             if config.get("kind") == "browser_catalog":
                 from pof.live.browser_catalog import discover_browser
                 found, cached = discover_browser(config, query, http=http), False
+                route = "configured_browser_catalog"
             elif config.get("kind") in {"csv", "json", "browser", "public_page"}:
                 found, cached = collect(config, store, refresh)
+                route = "configured_" + config["kind"]
             elif name == "Best Buy":
                 key = credentials.get("BESTBUY_API_KEY", "")
                 mode = config.get("bestbuy_method", "api" if key else "browser")
@@ -83,24 +85,28 @@ def run_research(query: ResearchQuery, names: list[str], store, credentials: dic
                     from pof.live.bestbuy_browser import BestBuyBrowserConnector
                     try:
                         found, cached = BestBuyBrowserConnector().discover(query), False
+                        route = "bestbuy_browser"
                     except SourceError as exc:
                         if mode == "browser-first" and key and exc.code == "browser_missing":
                             found, cached = discover_bestbuy(query, store, key, refresh=refresh, http=http)
+                            route = "bestbuy_api"
                         else:
                             raise
                 elif key:
                     found, cached = discover_bestbuy(query, store, key, refresh=refresh, http=http)
+                    route = "bestbuy_api"
                 else:
                     raise SourceError("credentials_required", "Optional Best Buy API mode needs a key. Choose public browser mode in Source Manager to run without one.")
             elif name in {"Amazon US", "AliExpress"}:
                 from pof.live.public_catalogs import AmazonPublicConnector, AliExpressPublicConnector
                 connector = AmazonPublicConnector(http) if name == "Amazon US" else AliExpressPublicConnector(http)
                 found, cached = connector.discover(query), False
+                route = "amazon_public" if name == "Amazon US" else "aliexpress_public"
             else:
                 raise SourceError("not_connected", "This source has no verified live catalog connector yet. See Source Manager for access details.")
             found = [p for p in found if keep_product(p, query)][:query.limit]
             products.extend(found)
-            record_attempt(store, name, count=len(found), live=not cached)
+            record_attempt(store, name, count=len(found), live=not cached, method=route)
             reports.append({"source": name, "products": len(found), "priced_products": sum(p.price is not None for p in found), "status": "cached" if cached else "live request",
                             "error": "", "code": ""})
         except Exception as exc:
