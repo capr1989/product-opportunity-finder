@@ -18,6 +18,7 @@ def test_all_dashboard_pages(page):
 
 def test_demo_workflow_and_filters():
     app = AppTest.from_file(str(Path("app.py").resolve()), default_timeout=30).run()
+    app.sidebar.radio[0].set_value("Overview").run()
     app.sidebar.toggle[0].set_value(True).run()
     next(b for b in app.sidebar.button if b.label == "Load / reset demo snapshots").click().run()
     app.sidebar.radio[0].set_value("Dropshipping Opportunities").run()

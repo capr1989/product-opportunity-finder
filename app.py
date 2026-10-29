@@ -20,6 +20,7 @@ from pof.models import NUMERIC
 from pof.research import deals, opportunities, search
 from pof.scoring import DEFAULT_WEIGHTS
 from pof.storage import Store
+from pof.ui_discovery import discovery_home
 from pof.ui_live import (connect_sources, help_center, navigate, new_research, results_dashboard,
                          setup_wizard, METRIC_HELP)
 
@@ -41,20 +42,25 @@ def initialize(data_directory):
 
 
 store = initialize(os.environ.get("POF_DATA_DIR", str(ROOT / "data")))
-PAGES = ["Overview", "Setup", "New Research", "Research Results", "Product Search", "Broad Discovery", "Retail Deal Hunter", "Dropshipping Opportunities",
+PAGES = ["Automatic Discovery", "Guided Research", "Advanced Tools", "Overview", "Setup", "New Research", "Research Results", "Product Search", "Broad Discovery", "Retail Deal Hunter", "Dropshipping Opportunities",
          "Product Comparison", "Google Ads Keyword Research", "Saved Products", "Research History",
          "Source Manager", "API Settings and Diagnostics", "Export Center", "Help"]
 st.sidebar.title("🔎 Opportunity Finder")
 if "next_workspace" in st.session_state:
     st.session_state["workspace"] = st.session_state.pop("next_workspace")
 if "workspace" not in st.session_state:
-    st.session_state["workspace"] = "Overview" if (store.get_config("settings", "onboarding") or {}).get("complete") else "Setup"
-page = st.sidebar.radio("Workspace", PAGES, key="workspace")
+    st.session_state["workspace"] = "Automatic Discovery"
+if st.sidebar.button("Automatic Discovery"):
+    navigate("Automatic Discovery")
+if st.sidebar.button("Guided Research"):
+    navigate("Guided Research")
+with st.sidebar.expander("Advanced Tools", expanded=st.session_state["workspace"] not in {"Automatic Discovery", "Guided Research"}):
+    page = st.radio("Workspace", PAGES, key="workspace")
 if st.sidebar.button("Start New Research", type="primary"):
     navigate("New Research")
-if page in {"New Research", "Research Results"}:
+if page in {"Automatic Discovery", "Guided Research", "New Research", "Research Results"}:
     st.session_state["demo_dataset"] = False
-demo = st.sidebar.toggle("Demo dataset", value=False, key="demo_dataset", disabled=page in {"New Research", "Research Results"},
+demo = st.sidebar.toggle("Demo dataset", value=False, key="demo_dataset", disabled=page in {"Automatic Discovery", "Guided Research", "New Research", "Research Results"},
     help="Fictional data stays separate from real research. Live research screens always use real data.")
 if demo:
     st.warning("DEMO MODE · All displayed products and metrics are fictional. No live evidence or sales predictions.")
@@ -238,10 +244,20 @@ def opportunity_view(items, dropship=False):
     return rows
 
 
-st.title(page)
-st.caption("Local research workspace · USD economics · Evidence and assumptions stay visible")
+if page not in {"Automatic Discovery", "Guided Research"}:
+    st.title(page)
+    st.caption("Local research workspace · USD economics · Evidence and assumptions stay visible")
 
-if page == "Overview":
+if page in {"Automatic Discovery", "Guided Research"}:
+    discovery_home(store, guided=page == "Guided Research")
+
+elif page == "Advanced Tools":
+    st.write("Open a tool from the Advanced Tools menu in the sidebar. All existing research, import, matching, history, export and diagnostic features remain available.")
+    for label in PAGES[3:]:
+        if st.button(label, key="advanced_" + label):
+            navigate(label)
+
+elif page == "Overview":
     cols = st.columns(4)
     cols[0].metric("Products", len(products))
     cols[1].metric("Sources", len({p.source for p in products}))

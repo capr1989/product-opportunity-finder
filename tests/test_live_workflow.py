@@ -65,7 +65,8 @@ def test_first_time_setup_and_restricted_research_ux(monkeypatch):
         raise SourceError("access_barrier", "Public page access is restricted; collection stopped")
     monkeypatch.setattr(BestBuyBrowserConnector, "discover", denied)
     app = AppTest.from_file(str(Path("app.py").resolve()), default_timeout=30).run()
-    assert app.sidebar.radio[0].value == "Setup"
+    assert app.sidebar.radio[0].value == "Automatic Discovery"
+    app.sidebar.radio[0].set_value("Setup").run()
     next(b for b in app.button if b.label == "Skip setup for now").click().run()
     assert app.sidebar.radio[0].value == "Overview"
     next(b for b in app.sidebar.button if b.label == "Start New Research").click().run()
