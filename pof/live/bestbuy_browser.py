@@ -119,7 +119,9 @@ def normalize_card(record, market="US"):
 def card_records(page, limit):
     cards = page.locator("li.sku-item, .product-list-item, [data-testid='product-card']")
     records = []
-    for index in range(min(cards.count(), limit)):
+    # Sponsored cards can remain price skeletons while ordinary cards have quotes.
+    # Inspect a bounded set already present in the DOM, then prefer usable prices.
+    for index in range(min(cards.count(), limit * 3, 100)):
         card = cards.nth(index)
         links = card.locator(".sku-title a, a[data-testid='product-title'], h2 a, h3 a, a.product-list-item-link")
         if not links.count():
@@ -144,7 +146,8 @@ def card_records(page, limit):
             "price_text": price.first.inner_text(timeout=1500) if price.count() else "",
             "original_price_text": original.first.inner_text(timeout=1500) if original.count() else "",
             "image_url": image_url or "", "clearance": "clearance" in text.lower()})
-    return records
+    records.sort(key=lambda row: money(row.get("price_text", "")) is None)
+    return records[:limit]
 
 
 class BestBuyBrowserConnector:

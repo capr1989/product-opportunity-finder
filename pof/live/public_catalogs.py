@@ -40,12 +40,15 @@ def static_dom(raw):
 def amazon_url(query, page):
     categories = {"abcat0500000": "computers", "abcat0204000": "electronics", "abcat0101000": "electronics",
                   "abcat0800000": "mobile", "abcat0900000": "appliances"}
-    terms = " ".join(v for v in (query.keywords, query.category_name, query.brand, query.model) if v)
+    terms = " ".join(v for v in (query.keywords or query.category_name, query.brand, query.model) if v)
     if not terms:
         terms = {"abcat0500000": "computer accessories", "abcat0204000": "headphones",
                  "abcat0101000": "televisions", "abcat0800000": "cell phones",
                  "abcat0900000": "home appliances"}.get(query.category_id, "electronics accessories")
-    return "https://www.amazon.com/s?" + urlencode({"k": terms, "i": categories.get(query.category_id, "electronics"), "page": page})
+    catalog = {"Computer accessories": "computers", "Phone accessories": "mobile",
+               "Audio": "electronics", "Home organization": "garden", "Kitchen tools": "kitchen",
+               "Fitness accessories": "sporting"}.get(query.category_name, categories.get(query.category_id, "electronics"))
+    return "https://www.amazon.com/s?" + urlencode({"k": terms, "i": catalog, "page": page})
 
 
 class AmazonPublicConnector:
@@ -151,7 +154,7 @@ class AliExpressPublicConnector:
     def discover(self, query):
         hints = {"abcat0500000": "computer accessories", "abcat0204000": "headphones", "abcat0101000": "tv accessories",
                  "abcat0800000": "phone accessories", "abcat0900000": "home appliances"}
-        terms = " ".join(v for v in (query.keywords, query.category_name, query.brand, query.model) if v) or hints.get(query.category_id, "electronics accessories")
+        terms = " ".join(v for v in (query.keywords or query.category_name, query.brand, query.model) if v) or hints.get(query.category_id, "electronics accessories")
         url = "https://www.aliexpress.com/w/wholesale-" + quote(terms.replace(" ", "-"), safe="-") + ".html"
         raw = self.http.fetch(url, "www.aliexpress.com", ("text/html", "application/xhtml+xml"))
         with static_dom(raw) as page:

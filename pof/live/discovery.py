@@ -95,7 +95,7 @@ def run_research(query: ResearchQuery, names: list[str], store, credentials: dic
             found = [p for p in found if keep_product(p, query)][:query.limit]
             products.extend(found)
             record_attempt(store, name, count=len(found), live=not cached)
-            reports.append({"source": name, "products": len(found), "status": "cached" if cached else "live request",
+            reports.append({"source": name, "products": len(found), "priced_products": sum(p.price is not None for p in found), "status": "cached" if cached else "live request",
                             "error": "", "code": ""})
         except Exception as exc:
             message = str(exc) if isinstance(exc, SourceError) else "Collection could not finish safely. Check source settings, network access and provider permissions."

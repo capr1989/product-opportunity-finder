@@ -54,6 +54,8 @@ def test_current_price_widget_with_real_chromium():
             page = browser.new_page()
             page.route("**/*", lambda route: route.abort())
             page.set_content('''<div class="product-list-item">
+                <a class="product-list-item-link" href="https://www.bestbuy.com/product/sponsor/sku/9999999">Sponsored skeleton</a>
+                <div class="skeleton-product-price"></div></div><div class="product-list-item">
                 <a class="product-list-item-link" href="https://www.bestbuy.com/product/test/sku/1234567"><h3>Test Brand - Contract fixture</h3></a>
                 <div data-testid="price-block-customer-price"><span class="sr-only">$22.49</span><span aria-hidden="true">$22.49</span></div>
                 <div data-testid="price-block-regular-price">$24.99</div><button>Add to cart</button></div>''')

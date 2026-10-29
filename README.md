@@ -4,6 +4,10 @@ A local-first Windows research application for comparing supplier and retail pro
 
 ## Live-first workflow
 
+**V2 starts at Find Products Worth Selling.** Click **Run Quick Scan** without entering keywords: working source routes are selected automatically and searches rotate across categories. **Deep Research** investigates selected or saved candidates with focused cross-source searches. **Guided Research** adds business model, market, budget, desired profit and delivery preferences. All prior screens are under **Advanced Tools**. See [v2 workflow, validation and limits](docs/V2.md).
+
+Results distinguish **Potential Lead**, **Financially Evaluated** and **Rejected / Unattractive**. A listing price difference is never labeled profit. Missing shipping, MOQ, identity, currency or selected-variant costs remain visible with a next step. Save candidates, investigate several together, review matches, dismiss findings, or resume interrupted research. Existing history and imports remain available.
+
 Use **Start New Research → select sources/filters → Run Research → Research Results**. CSV is an optional fallback. New users receive a setup wizard for USA/Panama markets, connections and costs; built-in Help covers the workflow.
 
 **Live-verified without API keys:** Best Buy, Amazon US and AliExpress. Real runs retrieved product names, observed prices, source links and timestamps. Both keyword research and discovery without specific product names were exercised. Best Buy returned USD offers; Amazon returned USD offers; AliExpress returned PAB minimum/coupon offers, which are preserved as such and excluded from automatic unit-profit calculations. See [validation evidence](docs/VALIDATION.md).
