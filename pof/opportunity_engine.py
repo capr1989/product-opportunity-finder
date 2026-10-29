@@ -46,6 +46,7 @@ class DiscoverySettings:
     source_limit: int = 3
     products_per_source: int = 8
     max_delivery_days: int | None = None
+    minimum_margin: float = 0
 
     def __post_init__(self):
         if self.mode not in {"Quick Scan", "Deep Research"}:
@@ -63,6 +64,8 @@ class DiscoverySettings:
             raise ValueError("Unsupported category")
         if self.max_delivery_days is not None and not 1 <= self.max_delivery_days <= 365:
             raise ValueError("Delivery preference must be 1–365 days")
+        if not math.isfinite(self.minimum_margin) or not 0 <= self.minimum_margin <= 100:
+            raise ValueError("Target margin must be 0–100 percent")
 
 
 def canonical(text):
@@ -104,12 +107,14 @@ def available_sources(store, credentials, settings):
     return names[:settings.source_limit]
 
 
-def build_leads(products, settings, assumptions=None, reviews=None):
+def build_leads(products, settings, assumptions=None, reviews=None, buy_ids=None):
     assumptions = assumptions or Assumptions()
     reviews = reviews or {}
     products = list({Store.identity(p): p for p in products if not p.demo}.values())[:300]
     rows, paired = [], set()
     for a in products:
+        if buy_ids is not None and Store.identity(a) not in buy_ids:
+            continue
         if settings.business_model in {"Dropshipping", "Wholesale"} and a.role != "supplier":
             continue
         for b in products:
@@ -164,6 +169,8 @@ def build_leads(products, settings, assumptions=None, reviews=None):
                 feasible = financial["inventory_commitment"] <= settings.budget
                 if financial["contribution_profit"] < settings.minimum_profit:
                     reasons.append("Modeled contribution is below your desired profit")
+                if (financial.get("contribution_margin") or 0) < settings.minimum_margin:
+                    reasons.append("Modeled contribution margin is below your target")
                 if not feasible:
                     reasons.append("Minimum inventory commitment exceeds your budget")
             gap = b.price - a.price if a.price is not None and b.price is not None and a.currency == b.currency else None
@@ -259,7 +266,8 @@ def run_session(store, settings, credentials, *, session_id=None, seeds=(), prog
             cache_key = hashlib.sha256(json.dumps([name, asdict(query)], sort_keys=True).encode()).hexdigest()
             cached = store.get_config("discovery_cache", cache_key)
             # Cache references point at original immutable snapshots and retain original timestamps.
-            fresh = cached and (datetime.now(timezone.utc) - datetime.fromisoformat(cached["created"])).total_seconds() < 900
+            cache_seconds = (store.get_config("settings", "application") or {}).get("cache_seconds", 900)
+            fresh = cached and (datetime.now(timezone.utc) - datetime.fromisoformat(cached["created"])).total_seconds() < min(900, max(0, cache_seconds))
             try:
                 if name in session.get("restricted_sources", []):
                     session["reports"].append({"source": name, "status": "skipped", "error": "Earlier access barrier or rate limit; no further requests in this session."})
@@ -269,7 +277,7 @@ def run_session(store, settings, credentials, *, session_id=None, seeds=(), prog
                 if fresh and store.products(run_id=cached["run_id"], demo=False):
                     result = {"run_id": cached["run_id"], "reports": [{"source": name, "status": "recent snapshots reused", "error": ""}]}
                 else:
-                    result = collector(query, [name], store, credentials, refresh=False)
+                    result = collector(query, [name], store, credentials, refresh=cache_seconds == 0)
                     if store.products(run_id=result["run_id"], demo=False):
                         store.put_config("discovery_cache", cache_key, {"run_id": result["run_id"], "created": now()})
                 session["run_ids"].append(result["run_id"])
@@ -304,4 +312,10 @@ def run_session(store, settings, credentials, *, session_id=None, seeds=(), prog
     session["updated"] = now()
     store.put_config("discovery", "coverage", coverage)
     store.put_config("discovery_session", session["id"], session)
+    if session["run_ids"]:
+        with store.connect() as db:
+            for run_id in session["run_ids"]:
+                db.execute("INSERT OR IGNORE INTO investigations SELECT DISTINCT candidate_id,? FROM scan_products WHERE run_id=?", (session["id"], run_id))
+            for seed_id in session.get("seed_ids", []):
+                db.execute("INSERT OR IGNORE INTO investigations SELECT DISTINCT candidate_id,? FROM listings WHERE original_identity=?", (session["id"], seed_id))
     return session
