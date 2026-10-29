@@ -140,15 +140,19 @@ def build_leads(products, settings, assumptions=None, reviews=None, buy_ids=None
                 missing.append("Confirm product identity, variant, material and package quantity")
             if a.shipping is None:
                 missing.append("Confirm inbound shipping per unit")
+            elif a.state("shipping") == "stale":
+                missing.append("Refresh stale shipping costs")
             if a.moq is None:
                 missing.append("Confirm minimum order quantity")
+            elif a.state("moq") == "stale":
+                missing.append("Refresh stale minimum order quantity")
             if a.currency != b.currency or a.currency != "USD":
                 missing.append("Obtain comparable USD quotes; no currency conversion is assumed")
             if a.price is None or b.price is None:
                 missing.append("Confirm both current unit prices")
             if a.condition == "unknown" or b.condition == "unknown":
                 missing.append("Confirm product condition")
-            if a.availability != "in_stock":
+            if a.availability != "in_stock" or a.state("availability") == "stale":
                 missing.append("Confirm stock and fulfillment availability")
             if a.source_attributes.get("price_basis") == "advertised_minimum":
                 missing.append("Confirm selected variant cost without minimum/coupon conditions")

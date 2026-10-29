@@ -20,6 +20,8 @@ def test_review_rate_favorites_export_and_notes():
     app.sidebar.radio[0].set_value("Product Review Center").run()
     assert not app.exception
     next(x for x in app.multiselect if x.label == "Product sources").set_value(["Contract supplier"]).run()
+    assert next(m for m in app.metric if m.label == "Listed product price").value == "USD 5.00"
+    assert any(b.proto.label == "Open product on Contract supplier" for b in app.get("link_button"))
     next(x for x in app.text_area if x.label == "Personal notes").set_value("Verify packaging")
     next(b for b in app.button if b.label == "Love it").click().run()
     assert not app.exception

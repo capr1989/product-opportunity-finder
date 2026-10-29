@@ -21,13 +21,63 @@ def decision_card(item, proof, store, *, scenarios=True, controls=None):
     financial = proof.get("financial", {"known": False})
     st.subheader(p.title)
     st.caption(f"{p.source} · {p.category or 'Category unknown'} · {p.collected_at} · Personal rating: {item['rating']}")
+    st.link_button("Open product on " + p.source, p.url, key="listing_" + cid, disabled=not bool(p.url), type="primary")
+    details = []
+    if p.brand:
+        details.append("Brand: " + p.brand)
+    if p.model:
+        details.append("Model: " + p.model)
+    if p.sku:
+        details.append("SKU: " + p.sku)
+    details.append("Availability: " + p.availability.replace("_", " ") + " (" + p.state("availability") + ")")
+    if p.condition and p.condition != "unknown":
+        details.append("Condition: " + p.condition)
+    if p.shipping is not None:
+        details.append("Shipping: " + money(p.shipping, p.currency))
+    if p.delivery_days is not None:
+        details.append(f"Delivery: {p.delivery_days:g} days")
+    if p.rating is not None:
+        details.append(f"Rating: {p.rating:g}/5" + (f" ({p.reviews:g} reviews)" if p.reviews is not None else ""))
+    st.write(" · ".join(details))
+    if p.original_price is not None:
+        st.caption("Source-advertised previous price: " + money(p.original_price, p.currency) + ". This is not an independently verified discount.")
+    from pof.listing_refresh import HOSTS, refresh_listing
+    if p.source in HOSTS and not p.retention_hours and p.collection_method != "bestbuy_api":
+        if st.button("Refresh listing price", key="refresh_" + cid):
+            from pof.live.errors import SourceError
+            try:
+                with st.spinner("Checking this product's public listing…"):
+                    refresh_listing(p, store)
+                st.rerun()
+            except SourceError as exc:
+                st.warning(str(exc))
+            except Exception:
+                st.warning("The listing could not be refreshed safely. Open the product link to check its current price.")
     st.caption("Research status: " + (proof.get("best") or {}).get("state", "Potential Lead"))
     if p.image_url and p.image_reuse_permitted and (store.get_config("settings", "application") or {}).get("show_images", False):
         st.image(p.image_url, width=220)
     cols = st.columns(3)
-    cols[0].metric("Observed unit quote", money(p.price, p.currency))
-    cols[1].metric("Estimated contribution / unit", money(financial.get("contribution_profit")))
-    cols[2].metric("Upfront inventory estimate", money(financial.get("inventory_commitment")))
+    previous_prices = [row for row in ReviewStore(store).history(cid) if row["price"] is not None]
+    last_known = previous_prices[-1] if previous_prices else None
+    cols[0].metric("Listed product price" if p.price is not None else "Last known listed price" if last_known else "Listed product price",
+                   money(p.price, p.currency) if p.price is not None else money(last_known["price"], last_known["currency"]) if last_known else "Not captured")
+    if p.price is None:
+        st.caption("The latest scan did not capture a readable price. " +
+                   ("Last known quote collected " + last_known["collected_at"] + ". " if last_known else "") +
+                   "Refresh or open the product link to check its current price; no price has been assumed.")
+    else:
+        st.caption("Price collected " + p.collected_at + "; the linked listing may have changed.")
+    if financial.get("known"):
+        cols[1].metric("Estimated contribution / unit", money(financial.get("contribution_profit")))
+        cols[2].metric("Upfront inventory estimate", money(financial.get("inventory_commitment")))
+    else:
+        cols[1].metric("Availability", p.availability.replace("_", " ").title())
+        if p.shipping is not None:
+            cols[2].metric("Reported shipping", money(p.shipping, p.currency))
+        elif p.rating is not None:
+            cols[2].metric("Product rating", f"{p.rating:g} / 5")
+        else:
+            cols[2].metric("Brand" if p.brand else "Source", p.brand or p.source)
     if controls:
         controls()
     best = proof.get("best")
@@ -40,7 +90,6 @@ def decision_card(item, proof, store, *, scenarios=True, controls=None):
     st.write("Why investigate: " + (best["promise"] if best else "A catalog candidate that needs independent retail and cost evidence."))
     st.caption("Main risks: different variants, unavailable fulfillment, changing quotes, returns and advertising costs. An asking price does not establish demand or a sale.")
     st.write("Next step: " + (best["next_step"] if best else "Confirm selected variant, destination, shipping and an independent selling reference."))
-    st.link_button("Open source listing", p.url, key="listing_" + cid, disabled=not bool(p.url))
     with st.expander("Sourcing, specifications and comparable offers"):
         st.write(f"Brand: {p.brand or 'Unknown'} · Model: {p.model or 'Unknown'} · Condition: {p.condition}")
         st.write(f"Source role: {p.role}. Retailers are not confirmed dropshipping suppliers.")
