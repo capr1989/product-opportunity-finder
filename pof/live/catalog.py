@@ -43,10 +43,15 @@ POLICIES = {
 }
 
 
+def bestbuy_browser_mode(config, has_key):
+    mode = config.get("bestbuy_method", "api" if has_key else "browser")
+    return mode in {"browser", "browser-first"} or (mode in {"auto", "api-first"} and not has_key)
+
+
 def source_status(name, config, state, has_key=False):
     policy = POLICIES.get(name, {})
     configured = config.get("kind") in {"json", "csv", "public_page", "browser", "browser_catalog"}
-    browser_mode = name == "Best Buy" and config.get("bestbuy_method", "api" if has_key else "browser") == "browser"
+    browser_mode = name == "Best Buy" and bestbuy_browser_mode(config, has_key)
     method = "Live Scraping" if browser_mode else "Live API" if name == "Best Buy" and has_key else policy.get("method", "Import Only")
     ready = (name == "Best Buy" and (browser_mode or has_key)) or name in {"Amazon US", "AliExpress"}
     if state.get("error_code") in {"access_denied", "access_barrier", "credentials_rejected"}:

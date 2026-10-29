@@ -9,7 +9,7 @@ from typing import Callable
 
 from pof.connectors import collect
 from pof.live.bestbuy import BestBuyConnector
-from pof.live.catalog import record_attempt
+from pof.live.catalog import bestbuy_browser_mode, record_attempt
 from pof.live.errors import SourceError
 from pof.live.query import ResearchQuery
 from pof.models import Product
@@ -79,9 +79,15 @@ def run_research(query: ResearchQuery, names: list[str], store, credentials: dic
             elif name == "Best Buy":
                 key = credentials.get("BESTBUY_API_KEY", "")
                 mode = config.get("bestbuy_method", "api" if key else "browser")
-                if mode == "browser":
+                if bestbuy_browser_mode(config, bool(key)):
                     from pof.live.bestbuy_browser import BestBuyBrowserConnector
-                    found, cached = BestBuyBrowserConnector().discover(query), False
+                    try:
+                        found, cached = BestBuyBrowserConnector().discover(query), False
+                    except SourceError as exc:
+                        if mode == "browser-first" and key and exc.code == "browser_missing":
+                            found, cached = discover_bestbuy(query, store, key, refresh=refresh, http=http)
+                        else:
+                            raise
                 elif key:
                     found, cached = discover_bestbuy(query, store, key, refresh=refresh, http=http)
                 else:
